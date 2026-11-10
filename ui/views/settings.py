@@ -27,7 +27,7 @@ def render() -> None:
         ui.section_title("Riesgo", "shield")
         a, b, d = st.columns(3)
         max_special = a.number_input("Stake especial máximo", min_value=1_000.0, value=cfg.max_special_stake, step=5_000.0, format="%.0f")
-        risk = b.slider("Riesgo máximo por apuesta", 1, 25, int(round(cfg.max_risk_ratio * 100)), format="%d%%")
+        risk = b.slider("Riesgo máximo por apuesta", 1, 50, int(round(cfg.max_risk_ratio * 100)), format="%d%%")
         exposure = d.slider("Exposición abierta máxima", 5, 100, int(round(cfg.max_open_exposure * 100)), format="%d%%")
         a, b = st.columns(2)
         kelly = a.select_slider("Fracción de Kelly", options=[0.1, 0.25, 0.5, 1.0], value=cfg.kelly_fraction

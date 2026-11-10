@@ -4,8 +4,9 @@ import pytest
 
 from conftest import make_bet
 from core.analytics import (advise_stake, breakdown, build_cumulative_bankroll, get_stake_profile, kelly_fraction,
-                            max_drawdown, monthly_summary, summarize_bets, unit_for_confidence)
+                            max_drawdown, monthly_summary, stake_for_unit, summarize_bets, unit_for_confidence)
 from core.models import BankSettings, compute_net_profit, normalize_status
+from ui.components import money
 
 
 # ------------------------------------------------------------------ modelos
@@ -25,7 +26,7 @@ def test_normalize_legacy_status():
 def test_settings_from_mapping_ignores_bad_values():
     cfg = BankSettings.from_mapping({"base_bankroll": "300000", "max_risk_ratio": "x", "staking_mode": "raro", "extra": 1})
     assert cfg.base_bankroll == 300_000
-    assert cfg.max_risk_ratio == 0.10
+    assert cfg.max_risk_ratio == 0.30
     assert cfg.staking_mode == "fijo"
 
 
@@ -54,6 +55,19 @@ def test_settings_roundtrip(temp_db):
     temp_db.save_settings(BankSettings(base_bankroll=500_000, staking_mode="dinamico"))
     cfg = temp_db.load_settings()
     assert cfg.base_bankroll == 500_000 and cfg.staking_mode == "dinamico"
+
+
+def test_old_default_risk_limit_migrates_once(temp_db):
+    with sqlite3.connect(temp_db.db_path()) as conn:
+        conn.execute("DELETE FROM settings WHERE key = 'stake_plan_version'")
+        conn.execute("UPDATE settings SET value = '0.10' WHERE key = 'max_risk_ratio'")
+    temp_db.init_db()
+    assert temp_db.load_settings().max_risk_ratio == 0.30
+    # Una preferencia posterior del usuario no se vuelve a sobrescribir.
+    with sqlite3.connect(temp_db.db_path()) as conn:
+        conn.execute("UPDATE settings SET value = '0.12' WHERE key = 'max_risk_ratio'")
+    temp_db.init_db()
+    assert temp_db.load_settings().max_risk_ratio == 0.12
 
 
 def test_legacy_rows_are_migrated(temp_db):
@@ -130,26 +144,48 @@ def test_breakdowns():
 def test_kelly_and_units():
     assert kelly_fraction(2.0, 0.5) == 0
     assert kelly_fraction(2.0, 0.6) == pytest.approx(0.2)
-    assert unit_for_confidence(60) == "—"
-    assert unit_for_confidence(80) == "2U"
-    assert unit_for_confidence(96) == "Whale"
+    expected = {
+        50: "—", 69: "—", 70: "1U", 74: "1U", 75: "2U", 79: "2U",
+        80: "3U", 84: "3U", 85: "4U", 89: "4U", 90: "Whale", 95: "Whale", 100: "Whale",
+    }
+    assert {confidence: unit_for_confidence(confidence) for confidence in expected} == expected
+
+
+def test_agreed_stake_percentages_are_exact():
+    cfg = BankSettings()
+    bank = 253_217.35
+    assert stake_for_unit("1U", bank, cfg) == 12_660.87
+    assert stake_for_unit("2U", bank, cfg) == 25_321.74
+    assert stake_for_unit("3U", bank, cfg) == 50_643.47
+    assert stake_for_unit("4U", bank, cfg) == 63_304.34
+    assert stake_for_unit("Whale", bank, cfg) == 75_965.21
+    assert stake_for_unit("desconocida", bank, cfg) == 0
+    assert money(10_128.69) == "$10.128,69 COP"
+    assert money(5_000) == "$5.000 COP"
 
 
 def test_stake_profile_caps_whale():
     profile = {r["unit"]: r for r in get_stake_profile(2_000_000, BankSettings())}
-    assert profile["1U"]["cash"] == 40_000
+    assert profile["1U"]["cash"] == 100_000
     assert profile["Whale"]["cash"] == 150_000  # tope absoluto
 
 
 def test_advisor_flags_risk():
-    ok = advise_stake(2.0, 80, 10_000, [], BankSettings())
+    ok = advise_stake(2.0, 80, 50_000, [], BankSettings(), selected_unit="3U")
     assert ok.level == "success" and ok.edge == 30.0
     bad = advise_stake(1.5, 60, 200_000, [], BankSettings())
     assert bad.level == "danger"
     assert any("Sin ventaja" in a["text"] for a in bad.alerts)
 
 
+def test_advisor_flags_manual_percentage_or_unit_mismatch():
+    stake_mismatch = advise_stake(2.0, 80, 49_999, [], BankSettings(), selected_unit="3U")
+    assert any("exactamente 20%" in alert["text"] for alert in stake_mismatch.alerts)
+    unit_mismatch = advise_stake(2.0, 80, 25_000, [], BankSettings(), selected_unit="2U")
+    assert any("recomienda 3U" in alert["text"] for alert in unit_mismatch.alerts)
+
+
 def test_dynamic_staking_uses_current_bank():
     cfg = BankSettings(staking_mode="dinamico")
-    adv = advise_stake(2.0, 80, 9_600, _bets(), cfg)  # bank actual 240k -> 2U = 9.600
-    assert adv.unit_stake == 9_600
+    adv = advise_stake(2.0, 80, 48_000, _bets(), cfg)  # bank actual 240k -> 3U = 48.000
+    assert adv.unit_stake == 48_000

@@ -11,20 +11,24 @@ Definiciones usadas (estándar del sector):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 
 from core.models import LOSS_STATUSES, SETTLED_STATUSES, WIN_STATUSES, BankSettings
 
-# Regla del plan: unidad -> (confianza mínima, % del bank)
+# Plan acordado: cada nivel de confianza aplica un porcentaje exacto del bank.
+# Los intervalos no se solapan: 70–74 → 5%, 75–79 → 10%, 80–84 → 20%,
+# 85–89 → 25% y 90–100 → 30%. Por debajo de 70% no se recomienda apostar.
 STAKE_RULES: Dict[str, Dict[str, float]] = {
-    "1U": {"confidence": 70, "pct": 0.02, "label": "Base"},
-    "2U": {"confidence": 75, "pct": 0.04, "label": "Moderado"},
-    "3U": {"confidence": 85, "pct": 0.06, "label": "Alto"},
-    "4U": {"confidence": 90, "pct": 0.10, "label": "Máximo"},
+    "1U": {"confidence": 70, "max_confidence": 74, "pct": 0.05, "label": "Base"},
+    "2U": {"confidence": 75, "max_confidence": 79, "pct": 0.10, "label": "Moderado"},
+    "3U": {"confidence": 80, "max_confidence": 84, "pct": 0.20, "label": "Alto"},
+    "4U": {"confidence": 85, "max_confidence": 89, "pct": 0.25, "label": "Máximo"},
+    "Whale": {"confidence": 90, "max_confidence": 100, "pct": 0.30, "label": "Especial"},
 }
-WHALE_CONFIDENCE = 95
+WHALE_CONFIDENCE = 90
 ODDS_BANDS = [(1.0, 1.5, "1.01–1.50"), (1.5, 2.0, "1.51–2.00"), (2.0, 3.0, "2.01–3.00"), (3.0, 1e9, "3.01+")]
 
 
@@ -70,28 +74,39 @@ def staking_base(bets: Iterable[dict], settings: BankSettings) -> float:
     return settings.base_bankroll
 
 
+def stake_for_unit(unit: str, bankroll: float, settings: Optional[BankSettings] = None) -> float:
+    """Devuelve el porcentaje acordado de una unidad, con precisión de centavos.
+
+    Whale conserva el porcentaje máximo configurado y el tope absoluto. Las demás
+    unidades siempre usan 5%, 10%, 20%, 25% y 30%; no se interpolan ni aproximan.
+    """
+    settings = settings or BankSettings()
+    rule = STAKE_RULES.get(unit)
+    if rule is None:
+        return 0.0
+    stake = Decimal(str(bankroll)) * Decimal(str(rule["pct"]))
+    if unit == "Whale":
+        stake = min(stake, Decimal(str(settings.max_special_stake)))
+    return float(stake.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def get_stake_profile(bankroll: float, settings: Optional[BankSettings] = None) -> List[dict]:
     settings = settings or BankSettings()
-    rows = [
-        {"unit": unit, "label": rule["label"], "confidence": rule["confidence"], "pct": rule["pct"],
-         "cash": round(bankroll * rule["pct"], 2)}
+    return [
+        {"unit": unit, "label": rule["label"], "confidence": rule["confidence"],
+         "max_confidence": rule["max_confidence"], "pct": rule["pct"],
+         "cash": stake_for_unit(unit, bankroll, settings)}
         for unit, rule in STAKE_RULES.items()
     ]
-    rows.append({
-        "unit": "Whale", "label": "Especial", "confidence": WHALE_CONFIDENCE, "pct": settings.max_risk_ratio,
-        "cash": round(min(bankroll * settings.max_risk_ratio, settings.max_special_stake), 2),
-    })
-    return rows
 
 
 def unit_for_confidence(confidence: float) -> str:
-    chosen = "—"
+    """Mapeo exacto de la recomendación del usuario a la unidad acordada."""
+    confidence = float(confidence)
     for unit, rule in STAKE_RULES.items():
-        if confidence >= rule["confidence"]:
-            chosen = unit
-    if confidence >= WHALE_CONFIDENCE:
-        chosen = "Whale"
-    return chosen
+        if rule["confidence"] <= confidence <= rule["max_confidence"]:
+            return unit
+    return "—"
 
 
 def _streaks(results: List[str]) -> Dict[str, object]:
@@ -236,8 +251,13 @@ class StakeAdvice:
 
 
 def advise_stake(odds: float, confidence: float, stake: float, bets: Iterable[dict],
-                 settings: Optional[BankSettings] = None) -> StakeAdvice:
-    """Evalúa una apuesta antes de registrarla: ventaja, Kelly fraccional y reglas del plan."""
+                 settings: Optional[BankSettings] = None, selected_unit: Optional[str] = None) -> StakeAdvice:
+    """Evalúa una apuesta antes de registrarla: ventaja, Kelly fraccional y reglas del plan.
+
+    ``selected_unit`` es opcional para mantener compatibilidad. Cuando la interfaz la envía,
+    el asesor también detecta una unidad distinta de la recomendada o un stake que no coincide
+    exactamente con el porcentaje acordado.
+    """
     settings = settings or BankSettings()
     bets = list(bets)
     bank_now = current_bankroll(bets, settings)
@@ -264,8 +284,15 @@ def advise_stake(odds: float, confidence: float, stake: float, bets: Iterable[di
         alerts.append({"tone": "warning", "text": "Sin ventaja: la confianza no supera la probabilidad implícita de la cuota."})
     if unit == "—":
         alerts.append({"tone": "warning", "text": f"Confianza menor a {STAKE_RULES['1U']['confidence']}%: el plan no recomienda entrar."})
-    elif stake > profile.get(unit, 0) * 1.05:
-        alerts.append({"tone": "warning", "text": f"Stake por encima de la unidad sugerida ({unit} = {profile[unit]:,.0f})."})
+    else:
+        effective_unit = selected_unit or unit
+        if selected_unit and selected_unit != unit:
+            alerts.append({"tone": "warning", "text": f"La confianza de {confidence:.0f}% recomienda {unit}, no {selected_unit}."})
+        planned_stake = profile.get(effective_unit, 0.0)
+        if abs(stake - planned_stake) > 0.01:
+            planned_pct = STAKE_RULES.get(effective_unit, {}).get("pct", 0)
+            alerts.append({"tone": "warning", "text":
+                           f"El stake no coincide con {effective_unit}: debe ser exactamente {planned_pct:.0%} del bank ({planned_stake:,.2f})."})
 
     return StakeAdvice(
         implied_prob=round(implied * 100, 2),

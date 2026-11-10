@@ -21,10 +21,12 @@ def esc(value) -> str:
 
 
 def money(value: float, currency: str = "COP", signed: bool = False) -> str:
-    """Formato colombiano: $1.234.567 COP (signo opcional)."""
+    """Formato colombiano exacto: $1.234 COP o $1.234,56 COP cuando hay centavos."""
     value = float(value or 0)
     sign = "+" if signed and value > 0 else "-" if value < 0 else ""
-    return f"{sign}${abs(value):,.0f} {currency}".replace(",", ".")
+    decimals = 2 if abs(value - round(value)) > 0.004 else 0
+    number = f"{abs(value):,.{decimals}f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"{sign}${number} {currency}"
 
 
 def pct(value: float, signed: bool = False, digits: int = 2) -> str:
@@ -131,10 +133,12 @@ def stake_ladder(profile: List[dict], currency: str) -> None:
     rungs = []
     for row in profile:
         whale = " bm-rung--whale" if row["unit"] == "Whale" else ""
+        confidence = (f"{row['confidence']:.0f}–{row['max_confidence']:.0f}%" if row.get("max_confidence") is not None
+                      else f"≥ {row['confidence']:.0f}%")
         rungs.append(
             f'<div class="bm-rung{whale}"><span class="bm-rung__unit">{esc(row["unit"])}</span>'
             f'<div class="bm-rung__cash">{esc(money(row["cash"], currency))}</div>'
-            f'<div class="bm-rung__meta">{esc(row["label"])} · {row["pct"] * 100:.0f}% · conf ≥ {row["confidence"]:.0f}%</div>'
+            f'<div class="bm-rung__meta">{esc(row["label"])} · {row["pct"] * 100:.0f}% · conf {confidence}</div>'
             f'<div class="bm-rung__bar"><span style="width:{row["pct"] / top * 100:.0f}%"></span></div></div>'
         )
     _md(f'<div class="bm-ladder">{"".join(rungs)}</div>')

@@ -6,9 +6,10 @@ Gestión profesional de capital para apuestas deportivas con Python, Streamlit, 
 
 - **Dashboard ejecutivo**: bank actual, variación, progreso a la meta de breakeven, yield, win rate, drawdown,
   exposición abierta, CLV, curva del bank con zona de drawdown, donut de resultados y últimos movimientos.
-- **Nueva apuesta con asesor de riesgo en vivo**: probabilidad implícita vs. tu estimación, valor esperado,
-  Kelly completo y fraccional, unidad sugerida por confianza y alertas del plan (riesgo por apuesta,
-  stake especial, exposición abierta, apuestas sin ventaja). Bloquea stakes por encima del máximo especial.
+- **Nueva apuesta guiada y automatizada**: primero eliges fútbol, baloncesto o tenis y la app muestra sus mercados frecuentes;
+  el porcentaje de confianza recomendado asigna automáticamente el stake acordado (70%→5%, 75%→10%,
+  80%→20%, 85%→25%, 90%→30% del bank). También muestra
+  probabilidad implícita, valor esperado, Kelly y alertas del plan. El modo manual permanece disponible para casos especiales.
 - **Historial**: liquidación en un clic (ganada / perdida / nula), filtros y búsqueda, edición completa,
   borrado con confirmación, exportación e importación CSV.
 - **Analítica**: rendimiento por deporte, mercado, unidad, rango de cuota y mes.
@@ -58,13 +59,16 @@ Pruebas: `pip install pytest && pytest -q`
 
 ## Plan financiero por defecto
 
-| Unidad | Confianza mínima | % del bank | Stake (bank 250.000) |
+| Unidad | Confianza recomendada | % exacto del bank | Stake (bank 250.000) |
 |---|---|---|---|
-| 1U Base | 70% | 2% | $5.000 |
-| 2U Moderado | 75% | 4% | $10.000 |
-| 3U Alto | 85% | 6% | $15.000 |
-| 4U Máximo | 90% | 10% | $25.000 |
-| Whale | 95% | 10% (tope $150.000) | $25.000 |
+| 1U Base | 70–74% | 5% | $12.500 |
+| 2U Moderado | 75–79% | 10% | $25.000 |
+| 3U Alto | 80–84% | 20% | $50.000 |
+| 4U Máximo | 85–89% | 25% | $62.500 |
+| Whale | 90–100% | 30% (tope $150.000) | $75.000 |
+
+Con menos de 70% el modo automático recomienda no apostar. El cálculo usa el bank inicial en modo fijo y el bank
+actual en modo dinámico; conserva centavos cuando el porcentaje exacto no produce un número entero.
 
 Bank inicial $250.000 COP · suscripción $120.000 · meta breakeven neta $370.000.
 
