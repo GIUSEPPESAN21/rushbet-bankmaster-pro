@@ -11,7 +11,7 @@ Gestión profesional de capital para apuestas deportivas con Python, Streamlit, 
   80%→20%, 85%→25%, 90%→30% del bank). También muestra
   probabilidad implícita, valor esperado, Kelly y alertas del plan. El modo manual permanece disponible para casos especiales.
 - **Historial**: liquidación en un clic (ganada / perdida / nula), filtros y búsqueda, edición completa,
-  borrado con confirmación, exportación e importación CSV.
+  borrado con confirmación, exportación/importación CSV y registro de auditoría de cada cambio.
 - **Analítica**: rendimiento por deporte, mercado, unidad, rango de cuota y mes.
 - **AI Analyst**: informe con Gemini (plantillas de preguntas) o diagnóstico local si no hay clave.
 - **Configuración**: bank, suscripción, meta, límites de riesgo, fracción de Kelly y staking fijo o dinámico.
@@ -23,7 +23,7 @@ Gestión profesional de capital para apuestas deportivas con Python, Streamlit, 
 app.py                  # entrada: navegación, logo, tarjeta del bank en la barra lateral
 core/                   # lógica sin Streamlit (probada con pytest)
   models.py             #   estados, BankSettings, cálculo del neto
-  database.py           #   SQLite, validación, migración v1, CSV
+  database.py           #   SQLite/PostgreSQL, transacciones, auditoría, migración v1, CSV
   analytics.py          #   métricas, desgloses, plan de unidades, asesor de stake
   ai_analyst.py         #   Gemini + informe local
 ui/
@@ -52,10 +52,12 @@ Pruebas: `pip install pytest && pytest -q`
 |---|---|
 | `GEMINI_API_KEY` | Activa Gemini (en `.env`, variable de entorno o Secrets de Streamlit Cloud). |
 | `GEMINI_MODEL` | Modelo a usar (por defecto `gemini-2.5-flash`). |
-| `RBM_DB_PATH` | Ruta del archivo SQLite (por defecto `rushbet_bankmaster.db` junto a la app). |
+| `DATABASE_URL` | URL PostgreSQL persistente para producción. Es obligatoria para conservar datos tras reinicios en Streamlit Cloud. |
+| `RBM_DB_PATH` | Ruta SQLite local; tiene prioridad en pruebas y desarrollo. |
 
-> En Streamlit Community Cloud el disco se borra al reiniciar la app. Descarga el CSV desde
-> **Historial → Respaldo** con frecuencia y vuelve a importarlo si hace falta.
+> En Streamlit Community Cloud configura `DATABASE_URL` con una conexión PostgreSQL; su disco local se borra al
+> reiniciar. Sin esa variable la app continúa con SQLite y muestra una advertencia. La exportación CSV de
+> **Historial → Respaldo** sigue disponible como copia adicional.
 
 ## Plan financiero por defecto
 

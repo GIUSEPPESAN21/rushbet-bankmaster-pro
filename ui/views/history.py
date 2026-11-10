@@ -24,17 +24,27 @@ def render() -> None:
 
     if not bets:
         ui.empty_state("Sin apuestas", "Cuando registres apuestas aparecerán aquí.", "inbox")
-        _backup(bets)
+        tab_backup, tab_audit = st.tabs([":material/cloud_download: Respaldo", ":material/history: Actividad"])
+        with tab_backup:
+            _backup(bets)
+        with tab_audit:
+            _audit_log()
         return
 
-    tab_pending, tab_all, tab_backup = st.tabs([f":material/schedule: Pendientes ({len(pending)})",
-                                                ":material/table_view: Todas", ":material/cloud_download: Respaldo"])
+    tab_pending, tab_all, tab_backup, tab_audit = st.tabs([
+        f":material/schedule: Pendientes ({len(pending)})",
+        ":material/table_view: Todas",
+        ":material/cloud_download: Respaldo",
+        ":material/history: Actividad",
+    ])
     with tab_pending:
         _pending(pending, c)
     with tab_all:
         _all(bets, c)
     with tab_backup:
         _backup(bets)
+    with tab_audit:
+        _audit_log()
 
 
 def _pending(pending, c) -> None:
@@ -149,3 +159,30 @@ def _backup(bets) -> None:
         else:
             ui.flash(f"{imported} apuestas importadas.")
             st.rerun()
+
+
+
+def _audit_log() -> None:
+    """Muestra acciones guardadas; la carga está limitada para mantener rápida la página."""
+    ui.section_title("Actividad guardada", "history", "Cada cambio se registra en la misma transacción que los datos.")
+    events = db.get_audit_events(200)
+    if not events:
+        ui.empty_state("Sin actividad registrada", "Las nuevas acciones aparecerán aquí.", "history")
+        return
+    labels = {
+        "create": "Creó", "update": "Actualizó", "settle": "Liquidó",
+        "delete": "Eliminó", "import": "Importó", "reset": "Reinició",
+    }
+    rows = []
+    for event in events:
+        payload = event.get("payload") or {}
+        detail = payload.get("event_name") or payload.get("status") or (
+            f"{payload.get('rows')} apuestas" if event["action"] == "import" else event["entity_type"]
+        )
+        rows.append({
+            "Fecha": event["created_at"],
+            "Acción": labels.get(event["action"], event["action"].title()),
+            "Elemento": f"{event['entity_type']} #{event['entity_id']}" if event.get("entity_id") else event["entity_type"],
+            "Detalle": detail,
+        })
+    st.dataframe(rows, width="stretch", hide_index=True)

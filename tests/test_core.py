@@ -42,6 +42,27 @@ def test_crud_and_settle(temp_db):
     assert temp_db.get_bet(bet_id)["net_profit"] == -5_000
     temp_db.delete_bet(bet_id)
     assert temp_db.get_bets() == []
+    assert [event["action"] for event in temp_db.get_audit_events()] == ["delete", "update", "settle", "create"]
+
+
+def test_write_and_audit_are_atomic(temp_db, monkeypatch):
+    def fail_audit(*args, **kwargs):
+        raise RuntimeError("audit unavailable")
+
+    monkeypatch.setattr(temp_db, "_audit", fail_audit)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        temp_db.add_bet(**make_bet())
+    assert temp_db.get_bets() == []
+
+
+def test_database_health_check_verifies_writes(temp_db):
+    health = temp_db.health_check()
+    assert health["ok"] is True
+    assert health["backend"] == "sqlite"
+    assert health["persistent"] is False
+    # La escritura de prueba se revierte y no contamina la configuración.
+    with temp_db.get_engine().connect() as conn:
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM settings WHERE key='__healthcheck__'").scalar_one() == 0
 
 
 @pytest.mark.parametrize("bad", [dict(odds=1.0), dict(stake=0), dict(event_name="  "), dict(confidence=120),

@@ -28,9 +28,16 @@ def _init_db_once() -> bool:
 
 def _sidebar() -> None:
     bets, cfg = db.get_bets(), db.load_settings()
-    m = summarize_bets(bets, cfg)
+    metrics = summarize_bets(bets, cfg)
+    health = db.health_check()
     with st.sidebar:
-        ui.sidebar_bank_card(m["current_bankroll"], m["net_profit"], m["breakeven_progress"], cfg.currency)
+        ui.sidebar_bank_card(metrics["current_bankroll"], metrics["net_profit"], metrics["breakeven_progress"], cfg.currency)
+        if health["ok"] and health["persistent"]:
+            st.success("Base persistente conectada", icon=":material/database:")
+        elif health["ok"]:
+            st.warning("SQLite local: usa DATABASE_URL en producción", icon=":material/hard_drive:")
+        else:
+            st.error(health["message"], icon=":material/database_off:")
         st.caption("Apuesta con responsabilidad. Línea de ayuda: consulta el programa de juego responsable de tu operador.")
 
 
