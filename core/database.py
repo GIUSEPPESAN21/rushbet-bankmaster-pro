@@ -78,7 +78,27 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bets_date ON bets(bet_date)")
         for key, value in BankSettings().as_dict().items():
             conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
+        _migrate_stake_plan(conn)
         _migrate_legacy_status(conn)
+
+
+def _migrate_stake_plan(conn: sqlite3.Connection) -> None:
+    """Actualiza una instalación con el antiguo límite predeterminado del 10%.
+
+    El marcador evita sobrescribir cambios posteriores del usuario. Si el límite ya era
+    distinto del antiguo valor predeterminado, se conserva.
+    """
+    version = conn.execute("SELECT value FROM settings WHERE key = 'stake_plan_version'").fetchone()
+    if version is not None:
+        return
+    current = conn.execute("SELECT value FROM settings WHERE key = 'max_risk_ratio'").fetchone()
+    try:
+        was_old_default = current is not None and float(current["value"]) == 0.10
+    except (TypeError, ValueError):
+        was_old_default = False
+    if was_old_default:
+        conn.execute("UPDATE settings SET value = '0.30' WHERE key = 'max_risk_ratio'")
+    conn.execute("INSERT INTO settings (key, value) VALUES ('stake_plan_version', '2')")
 
 
 def _migrate_legacy_status(conn: sqlite3.Connection) -> None:

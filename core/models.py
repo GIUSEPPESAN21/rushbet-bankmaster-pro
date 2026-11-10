@@ -29,7 +29,23 @@ STATUS_TONES: Dict[str, str] = {
 }
 
 UNIT_TYPES = ("1U", "2U", "3U", "4U", "Whale")
+# Los tres deportes principales aparecen primero. Los catálogos agilizan el registro,
+# pero cada selector acepta valores nuevos para preservar mercados personalizados.
 SPORTS = ("Fútbol", "Baloncesto", "Tenis", "Béisbol", "Fútbol americano", "eSports", "MMA / Boxeo", "Otro")
+SPORT_MARKETS = {
+    "Fútbol": ("1X2", "Doble oportunidad", "Total de goles", "Ambos marcan", "Hándicap asiático", "Córners", "Tarjetas"),
+    "Baloncesto": ("Ganador", "Hándicap", "Total de puntos", "Total del equipo", "Margen de victoria", "Props de jugador"),
+    "Tenis": ("Ganador del partido", "Hándicap de juegos", "Total de juegos", "Ganador del set", "Marcador exacto", "Props de jugador"),
+}
+MARKET_SELECTIONS = {
+    "1X2": ("Local", "Empate", "Visitante"),
+    "Doble oportunidad": ("Local o empate", "Local o visitante", "Empate o visitante"),
+    "Ambos marcan": ("Sí", "No"),
+    "Ganador": ("Local", "Visitante"),
+    "Ganador del partido": ("Jugador 1", "Jugador 2"),
+    "Ganador del set": ("Jugador 1", "Jugador 2"),
+}
+DEFAULT_MARKETS = ("Ganador", "Hándicap", "Total", "Props")
 STAKING_MODES = {"fijo": "Fijo (sobre bank inicial)", "dinamico": "Dinámico (sobre bank actual)"}
 
 
@@ -68,7 +84,7 @@ class BankSettings:
     subscription_cost: float = 120_000.0
     breakeven_target: float = 370_000.0
     max_special_stake: float = 150_000.0
-    max_risk_ratio: float = 0.10
+    max_risk_ratio: float = 0.30
     kelly_fraction: float = 0.25
     max_open_exposure: float = 0.30
     staking_mode: str = "fijo"
