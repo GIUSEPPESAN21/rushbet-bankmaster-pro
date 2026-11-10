@@ -33,6 +33,7 @@ _DEFAULT_DB = Path(__file__).resolve().parent.parent / "rushbet_bankmaster.db"
 BET_FIELDS = (
     "bet_date", "sport", "market", "event_name", "selection", "odds", "stake",
     "confidence", "unit_type", "status", "closing_odds", "notes",
+    "recommendation_type", "recommended_value", "recommended_stake", "adjustment_reason",
 )
 EXPORT_COLUMNS = ("id",) + BET_FIELDS + ("net_profit", "settled_at", "created_at")
 
@@ -118,6 +119,10 @@ def init_db() -> None:
                 net_profit DOUBLE PRECISION NOT NULL DEFAULT 0,
                 closing_odds DOUBLE PRECISION,
                 notes TEXT,
+                recommendation_type TEXT,
+                recommended_value DOUBLE PRECISION,
+                recommended_stake DOUBLE PRECISION,
+                adjustment_reason TEXT,
                 settled_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -141,6 +146,15 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE bets ADD COLUMN closing_odds DOUBLE PRECISION"))
         if "settled_at" not in columns:
             conn.execute(text("ALTER TABLE bets ADD COLUMN settled_at TIMESTAMP"))
+        optional_columns = {
+            "recommendation_type": "TEXT",
+            "recommended_value": "DOUBLE PRECISION",
+            "recommended_stake": "DOUBLE PRECISION",
+            "adjustment_reason": "TEXT",
+        }
+        for column, sql_type in optional_columns.items():
+            if column not in columns:
+                conn.execute(text(f"ALTER TABLE bets ADD COLUMN {column} {sql_type}"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_bets_date ON bets(bet_date)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at)"))
         for key, value in BankSettings().as_dict().items():
@@ -229,6 +243,10 @@ def _clean_bet(data: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("La cuota de cierre debe ser mayor que 1.00.")
     clean["unit_type"] = str(clean["unit_type"] or "1U")
     clean["notes"] = str(clean["notes"] or "").strip()
+    clean["recommendation_type"] = str(clean["recommendation_type"] or "confidence")
+    clean["recommended_value"] = float(clean["recommended_value"] if clean["recommended_value"] not in (None, "") else clean["confidence"])
+    clean["recommended_stake"] = float(clean["recommended_stake"] if clean["recommended_stake"] not in (None, "") else clean["stake"])
+    clean["adjustment_reason"] = str(clean["adjustment_reason"] or "").strip()
     return clean
 
 
@@ -239,9 +257,11 @@ def add_bet(**data: Any) -> int:
     with get_engine().begin() as conn:
         bet_id = conn.execute(text("""
             INSERT INTO bets (bet_date, sport, market, event_name, selection, odds, stake, confidence,
-                              unit_type, status, result, net_profit, closing_odds, notes, settled_at)
+                              unit_type, status, result, net_profit, closing_odds, notes,
+                              recommendation_type, recommended_value, recommended_stake, adjustment_reason, settled_at)
             VALUES (:bet_date, :sport, :market, :event_name, :selection, :odds, :stake, :confidence,
                     :unit_type, :status, :result, :net_profit, :closing_odds, :notes,
+                    :recommendation_type, :recommended_value, :recommended_stake, :adjustment_reason,
                     CASE WHEN :status = 'pending' THEN NULL ELSE CURRENT_TIMESTAMP END)
             RETURNING id
         """), params).scalar_one()
@@ -259,6 +279,8 @@ def update_bet(bet_id: int, **data: Any) -> None:
                    event_name = :event_name, selection = :selection, odds = :odds, stake = :stake,
                    confidence = :confidence, unit_type = :unit_type, status = :status, result = :status,
                    net_profit = :net_profit, closing_odds = :closing_odds, notes = :notes,
+                   recommendation_type = :recommendation_type, recommended_value = :recommended_value,
+                   recommended_stake = :recommended_stake, adjustment_reason = :adjustment_reason,
                    settled_at = CASE WHEN :status = 'pending' THEN NULL ELSE COALESCE(settled_at, CURRENT_TIMESTAMP) END
             WHERE id = :id
         """), params)

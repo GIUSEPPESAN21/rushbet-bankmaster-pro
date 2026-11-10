@@ -3,8 +3,9 @@ import sqlite3
 import pytest
 
 from conftest import make_bet
-from core.analytics import (advise_stake, breakdown, build_cumulative_bankroll, get_stake_profile, kelly_fraction,
-                            max_drawdown, monthly_summary, stake_for_unit, summarize_bets, unit_for_confidence)
+from core.analytics import (advise_stake, available_bankroll, breakdown, build_cumulative_bankroll, get_stake_profile,
+                            kelly_fraction, max_drawdown, monthly_summary, plan_recommendation, stake_for_unit,
+                            summarize_bets, unit_for_confidence, unit_for_percentage)
 from core.models import BankSettings, compute_net_profit, normalize_status
 from ui.components import money
 
@@ -43,6 +44,16 @@ def test_crud_and_settle(temp_db):
     temp_db.delete_bet(bet_id)
     assert temp_db.get_bets() == []
     assert [event["action"] for event in temp_db.get_audit_events()] == ["delete", "update", "settle", "create"]
+
+
+def test_recommendation_metadata_is_persisted(temp_db):
+    bet_id = temp_db.add_bet(**make_bet(), recommendation_type="amount", recommended_value=30_000,
+                             recommended_stake=30_000, adjustment_reason="Reducido por límite")
+    row = temp_db.get_bet(bet_id)
+    assert row["recommendation_type"] == "amount"
+    assert row["recommended_value"] == 30_000
+    assert row["recommended_stake"] == 30_000
+    assert row["adjustment_reason"] == "Reducido por límite"
 
 
 def test_write_and_audit_are_atomic(temp_db, monkeypatch):
@@ -210,3 +221,30 @@ def test_dynamic_staking_uses_current_bank():
     cfg = BankSettings(staking_mode="dinamico")
     adv = advise_stake(2.0, 80, 48_000, _bets(), cfg)  # bank actual 240k -> 3U = 48.000
     assert adv.unit_stake == 48_000
+
+
+def test_protected_reserve_is_excluded_from_stakes():
+    cfg = BankSettings(protected_reserve=50_000, staking_mode="fijo")
+    assert available_bankroll([], cfg) == 200_000
+    assert plan_recommendation("confidence", 80, 200_000, cfg).recommended_stake == 40_000
+
+
+def test_recommendation_accepts_confidence_percentage_or_amount():
+    cfg = BankSettings(max_risk_ratio=0.30)
+    confidence = plan_recommendation("confidence", 75, 250_000, cfg)
+    assert (confidence.unit, confidence.percentage, confidence.final_stake) == ("2U", 10, 25_000)
+    percentage = plan_recommendation("percentage", 25, 250_000, cfg)
+    assert (percentage.unit, percentage.confidence, percentage.final_stake) == ("4U", 85, 62_500)
+    amount = plan_recommendation("amount", 20_000, 250_000, cfg)
+    assert amount.recommended_stake == 20_000 and amount.final_stake == 20_000
+    assert amount.adjustments  # 8% no coincide exactamente con un nivel acordado
+    assert unit_for_percentage(30) == "Whale"
+    assert unit_for_percentage(12) == "—"
+
+
+def test_recommendation_is_capped_by_budget_rules():
+    cfg = BankSettings(max_risk_ratio=0.10, max_special_stake=150_000)
+    plan = plan_recommendation("confidence", 90, 250_000, cfg)
+    assert plan.recommended_stake == 75_000
+    assert plan.final_stake == 25_000
+    assert "límite por apuesta" in plan.adjustments[0]["text"]

@@ -87,6 +87,9 @@ class BankSettings:
     max_risk_ratio: float = 0.30
     kelly_fraction: float = 0.25
     max_open_exposure: float = 0.30
+    protected_reserve: float = 0.0
+    profit_target: float = 120_000.0
+    stop_loss_ratio: float = 0.20
     staking_mode: str = "fijo"
     currency: str = "COP"
 

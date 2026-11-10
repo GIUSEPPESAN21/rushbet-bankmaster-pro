@@ -67,11 +67,16 @@ def current_bankroll(bets: Iterable[dict], settings: BankSettings) -> float:
     return round(settings.base_bankroll + float(df["net_profit"].fillna(0).sum()), 2)
 
 
+def available_bankroll(bets: Iterable[dict], settings: BankSettings) -> float:
+    """Capital utilizable después de separar la reserva protegida."""
+    return round(max(current_bankroll(bets, settings) - settings.protected_reserve, 0.0), 2)
+
+
 def staking_base(bets: Iterable[dict], settings: BankSettings) -> float:
-    """Bank sobre el que se calculan las unidades según el modo de staking."""
+    """Bank disponible sobre el que se calculan las unidades según el modo de staking."""
     if settings.staking_mode == "dinamico":
-        return max(current_bankroll(bets, settings), 0.0)
-    return settings.base_bankroll
+        return available_bankroll(bets, settings)
+    return max(settings.base_bankroll - settings.protected_reserve, 0.0)
 
 
 def stake_for_unit(unit: str, bankroll: float, settings: Optional[BankSettings] = None) -> float:
@@ -109,6 +114,98 @@ def unit_for_confidence(confidence: float) -> str:
     return "—"
 
 
+def unit_for_percentage(percentage: float) -> str:
+    """Unidad cuyo porcentaje acordado coincide exactamente; «—» si no coincide."""
+    percentage = float(percentage)
+    for unit, rule in STAKE_RULES.items():
+        if abs(percentage - rule["pct"] * 100) < 0.001:
+            return unit
+    return "—"
+
+
+def nearest_unit_for_stake(stake: float, bankroll: float) -> str:
+    """Nivel acordado más cercano a un monto recomendado por un tipster."""
+    if bankroll <= 0 or stake <= 0:
+        return "—"
+    percentage = stake / bankroll
+    return min(STAKE_RULES, key=lambda unit: abs(STAKE_RULES[unit]["pct"] - percentage))
+
+
+@dataclass
+class RecommendationPlan:
+    unit: str
+    confidence: float
+    percentage: float
+    recommended_stake: float
+    final_stake: float
+    adjustments: List[Dict[str, str]] = field(default_factory=list)
+
+
+RECOMMENDATION_MODES = {
+    "confidence": "Nivel de confianza",
+    "percentage": "Porcentaje del bank",
+    "amount": "Monto recomendado",
+}
+
+
+def plan_recommendation(mode: str, value: float, bankroll: float,
+                        settings: Optional[BankSettings] = None) -> RecommendationPlan:
+    """Normaliza lo recibido del tipster y aplica los límites configurados.
+
+    Confianza y porcentaje siempre se convierten al porcentaje exacto acordado. Un monto
+    directo se conserva como recomendación y se asocia al nivel más cercano. El stake final
+    nunca excede el capital disponible, el límite por apuesta ni el tope monetario especial.
+    """
+    settings = settings or BankSettings()
+    if mode not in RECOMMENDATION_MODES:
+        raise ValueError("Tipo de recomendación desconocido.")
+    if bankroll <= 0:
+        return RecommendationPlan("—", 0, 0, 0, 0,
+                                  [{"tone": "danger", "text": "No hay bank disponible después de la reserva."}])
+
+    if mode == "confidence":
+        unit = unit_for_confidence(value)
+        if unit == "—":
+            return RecommendationPlan(unit, float(value), 0, 0, 0,
+                                      [{"tone": "warning", "text": "Menos de 70%: el plan recomienda no apostar."}])
+        rule = STAKE_RULES[unit]
+        percentage = rule["pct"] * 100
+        recommended = stake_for_unit(unit, bankroll, settings)
+        confidence = float(value)
+    elif mode == "percentage":
+        unit = unit_for_percentage(value)
+        if unit == "—":
+            raise ValueError("El porcentaje debe ser uno de los acordados: 5%, 10%, 20%, 25% o 30%.")
+        rule = STAKE_RULES[unit]
+        percentage = float(value)
+        recommended = stake_for_unit(unit, bankroll, settings)
+        confidence = rule["confidence"]
+    else:
+        recommended = round(float(value), 2)
+        if recommended <= 0:
+            raise ValueError("El monto recomendado debe ser mayor que cero.")
+        unit = nearest_unit_for_stake(recommended, bankroll)
+        rule = STAKE_RULES[unit]
+        percentage = recommended / bankroll * 100
+        confidence = rule["confidence"]
+
+    final = recommended
+    adjustments: List[Dict[str, str]] = []
+    configured_cap = bankroll * settings.max_risk_ratio
+    caps = [(bankroll, "capital disponible"), (configured_cap, f"límite por apuesta ({settings.max_risk_ratio:.0%})"),
+            (settings.max_special_stake, "tope monetario especial")]
+    cap, cap_label = min(caps, key=lambda item: item[0])
+    if final > cap:
+        final = cap
+        adjustments.append({"tone": "warning", "text": f"Stake reducido al {cap_label}."})
+    if mode == "amount":
+        exact = STAKE_RULES[unit]["pct"] * 100
+        if abs(percentage - exact) > 0.01:
+            adjustments.append({"tone": "info", "text":
+                                f"El monto equivale a {percentage:.2f}% del bank; el nivel acordado más cercano es {unit} ({exact:.0f}%)."})
+    return RecommendationPlan(unit, confidence, round(percentage, 2), round(recommended, 2), round(final, 2), adjustments)
+
+
 def _streaks(results: List[str]) -> Dict[str, object]:
     best_win = best_loss = run = 0
     current_kind = None
@@ -137,9 +234,12 @@ def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None
     losses = int(settled["status"].isin(LOSS_STATUSES).sum())
     voids = int((settled["status"] == "void").sum())
     bank_now = settings.base_bankroll + net_profit
+    bank_available = max(bank_now - settings.protected_reserve, 0.0)
     curve = build_cumulative_bankroll(bets, settings)
     drawdown = max_drawdown([p["bankroll"] for p in curve])
     target_profit = settings.breakeven_target - settings.base_bankroll
+    goal_target = settings.base_bankroll + settings.profit_target
+    stop_loss_limit = settings.base_bankroll * settings.stop_loss_ratio
     clv = settled.dropna(subset=["closing_odds"])
     clv_avg = float((clv["odds"] / clv["closing_odds"] - 1).mean() * 100) if not clv.empty else None
     kelly_ref = (
@@ -163,14 +263,23 @@ def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None
         "avg_odds": round(float(settled["odds"].mean()), 2) if not settled.empty else 0.0,
         "avg_stake": round(float(settled["stake"].mean()), 2) if not settled.empty else 0.0,
         "current_bankroll": round(bank_now, 2),
+        "available_bankroll": round(bank_available, 2),
+        "protected_reserve": round(settings.protected_reserve, 2),
         "bankroll_after_subscription": round(bank_now - settings.subscription_cost, 2),
         "breakeven_gap": round(max(settings.breakeven_target - bank_now, 0.0), 2),
         "breakeven_progress": round(min(max(safe_divide(net_profit, target_profit), 0.0), 1.0) * 100, 1)
         if target_profit > 0 else 100.0,
+        "profit_target": round(settings.profit_target, 2),
+        "goal_bankroll": round(goal_target, 2),
+        "goal_gap": round(max(goal_target - bank_now, 0.0), 2),
+        "goal_progress": round(min(max(safe_divide(net_profit, settings.profit_target), 0.0), 1.0) * 100, 1)
+        if settings.profit_target > 0 else 100.0,
+        "stop_loss_limit": round(stop_loss_limit, 2),
+        "stop_loss_remaining": round(max(stop_loss_limit + min(net_profit, 0.0), 0.0), 2),
         "max_drawdown": round(drawdown["amount"], 2),
         "max_drawdown_pct": round(drawdown["pct"] * 100, 2),
         "open_exposure": round(open_exposure, 2),
-        "open_exposure_pct": round(safe_divide(open_exposure, max(bank_now, 1)) * 100, 2),
+        "open_exposure_pct": round(safe_divide(open_exposure, max(bank_available, 1)) * 100, 2),
         "kelly_reference": round(kelly_ref, 4),
         "clv_avg": round(clv_avg, 2) if clv_avg is not None else None,
         "streaks": _streaks(list(settled["status"])),
@@ -260,7 +369,7 @@ def advise_stake(odds: float, confidence: float, stake: float, bets: Iterable[di
     """
     settings = settings or BankSettings()
     bets = list(bets)
-    bank_now = current_bankroll(bets, settings)
+    bank_now = available_bankroll(bets, settings)
     base = staking_base(bets, settings)
     p = confidence / 100
     implied = implied_probability(odds)

@@ -68,8 +68,8 @@ def test_settle_from_history(temp_db):
 
 def test_new_bet_saves(temp_db):
     at = _view("new_bet")
-    at.text_input(key="nb_event").input("Real vs Barça")
-    at.text_input(key="nb_selection").input("Local")
+    at.text_input(key="qb_event").input("Real vs Barça")
+    at.text_input(key="qb_selection").input("Local")
     at.run()
     next(b for b in at.button if b.label == "Guardar apuesta").click().run()
     assert not at.exception
