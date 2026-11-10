@@ -6,15 +6,16 @@ Gestión profesional de capital para apuestas deportivas con Python, Streamlit, 
 
 - **Dashboard ejecutivo**: bank actual, variación, progreso a la meta de breakeven, yield, win rate, drawdown,
   exposición abierta, CLV, curva del bank con zona de drawdown, donut de resultados y últimos movimientos.
-- **Nueva apuesta guiada y automatizada**: primero eliges fútbol, baloncesto o tenis y la app muestra sus mercados frecuentes;
-  el porcentaje de confianza recomendado asigna automáticamente el stake acordado (70%→5%, 75%→10%,
-  80%→20%, 85%→25%, 90%→30% del bank). También muestra
-  probabilidad implícita, valor esperado, Kelly y alertas del plan. El modo manual permanece disponible para casos especiales.
+- **Registro rápido de apuestas**: introduce deporte, partido, selección y cuota; luego captura la recomendación
+  del tipster como nivel de confianza, porcentaje del bank o monto. La app normaliza el dato al plan acordado,
+  calcula el stake final y aplica automáticamente la reserva, el límite por apuesta y el tope monetario.
+  Los campos secundarios quedan en “Más detalles” y el ajuste manual sigue disponible.
 - **Historial**: liquidación en un clic (ganada / perdida / nula), filtros y búsqueda, edición completa,
   borrado con confirmación, exportación/importación CSV y registro de auditoría de cada cambio.
 - **Analítica**: rendimiento por deporte, mercado, unidad, rango de cuota y mes.
 - **AI Analyst**: informe con Gemini (plantillas de preguntas) o diagnóstico local si no hay clave.
-- **Configuración**: bank, suscripción, meta, límites de riesgo, fracción de Kelly y staking fijo o dinámico.
+- **Configuración**: bank, reserva protegida, suscripción, objetivo de recuperación, objetivo de ganancia,
+  stop-loss, límites de riesgo, perfiles rápidos, fracción de Kelly y staking fijo o dinámico.
 - Tema claro / oscuro automático, diseño adaptable a celular y movimiento reducido.
 
 ## Estructura

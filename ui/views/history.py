@@ -86,14 +86,15 @@ def _all(bets, c) -> None:
 
     st.caption(f"{len(df)} apuestas · neto filtrado {ui.money(df['net_profit'].sum(), c, signed=True)}")
     view = df.assign(estado=df["status"].map(STATUSES))[
-        ["id", "bet_date", "sport", "event_name", "selection", "market", "odds", "stake", "unit_type", "estado", "net_profit"]]
+        ["id", "bet_date", "sport", "event_name", "selection", "market", "odds", "recommended_stake", "stake", "unit_type", "estado", "net_profit"]]
     st.dataframe(
         view, width="stretch", hide_index=True,
         column_config={
             "id": st.column_config.NumberColumn("#", width="small"),
             "bet_date": "Fecha", "sport": "Deporte", "event_name": "Evento", "selection": "Selección", "market": "Mercado",
             "odds": st.column_config.NumberColumn("Cuota", format="%.2f"),
-            "stake": st.column_config.NumberColumn("Stake", format="$%,.0f"),
+            "recommended_stake": st.column_config.NumberColumn("Recomendado", format="$%,.0f"),
+            "stake": st.column_config.NumberColumn("Stake final", format="$%,.0f"),
             "unit_type": "Unidad", "estado": "Estado",
             "net_profit": st.column_config.NumberColumn("Neto", format="$%,.0f"),
         },
@@ -130,7 +131,11 @@ def _edit_form(bet) -> None:
         try:
             db.update_bet(bet["id"], bet_date=bet_date.isoformat(), sport=sport, market=market, event_name=event,
                           selection=selection, odds=odds, stake=stake, confidence=confidence, unit_type=unit,
-                          status=status, closing_odds=closing or None, notes=notes)
+                          status=status, closing_odds=closing or None, notes=notes,
+                          recommendation_type=bet.get("recommendation_type"),
+                          recommended_value=bet.get("recommended_value"),
+                          recommended_stake=bet.get("recommended_stake"),
+                          adjustment_reason=bet.get("adjustment_reason"))
         except ValueError as exc:
             st.error(str(exc), icon=":material/error:")
         else:
