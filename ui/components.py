@@ -158,6 +158,47 @@ def risk_card(level: str, title: str, metrics: List[tuple], alerts: List[dict]) 
         f'<ul class="bm-risk__alerts">{lis}</ul></div>')
 
 
+def bet_slip(stake: float, payout: float, profit: float, unit: str, pct_bank: float, odds: float,
+             currency: str, level: str, alerts: List[dict], event: str = "", selection: str = "",
+             status_text: Optional[str] = None) -> None:
+    """Ticket de apuesta: lo esencial en grande y un único estado legible.
+
+    ``payout`` = stake × cuota (lo que se cobra); ``profit`` = ganancia neta.
+    Solo se listan alertas de tono warning/danger para no saturar la vista.
+    """
+    level = level if level in ("success", "warning", "danger") else "warning"
+    status = {
+        "success": ("check_circle", "Lista para guardar"),
+        "warning": ("info", "Revisa antes de guardar"),
+        "danger": ("block", "No se puede guardar"),
+    }[level]
+    if status_text:
+        status = (status[0], status_text)
+    title = esc(event) if event else "Tu apuesta"
+    pick = f'<div class="bm-slip__pick">{esc(selection)} <span>@ {odds:.2f}</span></div>' if selection else \
+        f'<div class="bm-slip__pick"><span>Cuota @ {odds:.2f}</span></div>'
+    unit_badge = f"{esc(unit)} · {pct_bank:g}% del bank" if unit != "—" else "Sin stake recomendado"
+    issues = [a for a in alerts if a.get("tone") in ("warning", "danger")]
+    issues_html = ""
+    if issues:
+        items = "".join(f'<li class="is-{_tone(a["tone"])}">{icon_html("error" if a["tone"] == "danger" else "warning")}'
+                        f'<span>{esc(a["text"])}</span></li>' for a in issues[:3])
+        issues_html = f'<ul class="bm-slip__issues">{items}</ul>'
+    _md(
+        f'<div class="bm-slip bm-slip--{level}">'
+        f'<div class="bm-slip__head"><div class="bm-slip__event">{title}</div>{pick}</div>'
+        f'<div class="bm-slip__stake"><div class="bm-slip__label">Apuesta</div>'
+        f'<div class="bm-slip__amount">{esc(money(stake, currency))}</div>'
+        f'<span class="bm-slip__unit">{unit_badge}</span></div>'
+        f'<div class="bm-slip__row"><div><div class="bm-slip__label">Si ganas cobras</div>'
+        f'<div class="bm-slip__value">{esc(money(payout, currency))}</div></div>'
+        f'<div><div class="bm-slip__label">Ganancia</div>'
+        f'<div class="bm-slip__value bm-pos">{esc(money(profit, currency, signed=True))}</div></div></div>'
+        f'<div class="bm-slip__status">{icon_html(status[0])}<span>{esc(status[1])}</span></div>'
+        f'{issues_html}</div>'
+    )
+
+
 def timeline(items: List[dict]) -> None:
     """Línea de tiempo vertical. Cada item: {title, meta, amount, tone}."""
     rows = "".join(
