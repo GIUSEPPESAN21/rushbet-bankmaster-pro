@@ -1,110 +1,86 @@
 # Rushbet BankMaster Pro
 
-Aplicación profesional de gestión de capital para apuestas deportivas con Python, Streamlit, Plotly, Pandas y SQLite.
+Gestión profesional de capital para apuestas deportivas con Python, Streamlit, Plotly, Pandas y SQLite.
 
-## Objetivo
+## Qué hace
 
-Rushbet BankMaster Pro permite:
+- **Dashboard ejecutivo**: bank actual, variación, progreso a la meta de breakeven, yield, win rate, drawdown,
+  exposición abierta, CLV, curva del bank con zona de drawdown, donut de resultados y últimos movimientos.
+- **Nueva apuesta con asesor de riesgo en vivo**: probabilidad implícita vs. tu estimación, valor esperado,
+  Kelly completo y fraccional, unidad sugerida por confianza y alertas del plan (riesgo por apuesta,
+  stake especial, exposición abierta, apuestas sin ventaja). Bloquea stakes por encima del máximo especial.
+- **Historial**: liquidación en un clic (ganada / perdida / nula), filtros y búsqueda, edición completa,
+  borrado con confirmación, exportación e importación CSV.
+- **Analítica**: rendimiento por deporte, mercado, unidad, rango de cuota y mes.
+- **AI Analyst**: informe con Gemini (plantillas de preguntas) o diagnóstico local si no hay clave.
+- **Configuración**: bank, suscripción, meta, límites de riesgo, fracción de Kelly y staking fijo o dinámico.
+- Tema claro / oscuro automático, diseño adaptable a celular y movimiento reducido.
 
-- registrar apuestas con stake, confianza, mercado y rendimiento real,
-- controlar el bankroll operativo de forma disciplinada,
-- medir ROI, Yield, Win Rate y Kelly reference,
-- gestionar la meta de breakeven neta del grupo tipster,
-- analizar el plan de staking con alertas de riesgo,
-- generar recomendaciones de estrategia con Gemini 3 Flash si la API está configurada.
-
-## Estructura del proyecto
+## Estructura
 
 ```text
-rushbet-bankmaster/
-├── app.py
-├── database.py
-├── analytics.py
-├── ai_analyst.py
-├── requirements.txt
-├── .gitignore
-├── README.md
-└── rushbet_bankmaster.db
+app.py                  # entrada: navegación, logo, tarjeta del bank en la barra lateral
+core/                   # lógica sin Streamlit (probada con pytest)
+  models.py             #   estados, BankSettings, cálculo del neto
+  database.py           #   SQLite, validación, migración v1, CSV
+  analytics.py          #   métricas, desgloses, plan de unidades, asesor de stake
+  ai_analyst.py         #   Gemini + informe local
+ui/
+  components.py         # piezas visuales (hero, indicadores, semáforo, línea de tiempo…)
+  charts.py             # gráficos Plotly con la identidad de la app
+  views/                # una página por archivo
+assets/                 # style.css (sistema de diseño), logo e icono
+.streamlit/config.toml  # tema nativo claro/oscuro
+tests/                  # pruebas de núcleo y de humo de cada página
 ```
 
-## Requisitos
-
-- Python 3.10+
-- Pip o uv
-
-## Instalación
+## Instalación y ejecución
 
 ```bash
-cd rushbet-bankmaster
 python -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# .venv\Scripts\activate   # Windows
+.venv\Scripts\activate        # Windows  (Linux/macOS: source .venv/bin/activate)
 pip install -r requirements.txt
-```
-
-## Ejecución
-
-```bash
 streamlit run app.py
 ```
 
-## Variables de entorno
+Pruebas: `pip install pytest && pytest -q`
 
-Para activar la integración con Gemini 3 Flash, crea un `.env` con:
+## Variables de entorno / Secrets
 
-```bash
-GEMINI_API_KEY=tu_api_key_aqui
-```
+| Variable | Uso |
+|---|---|
+| `GEMINI_API_KEY` | Activa Gemini (en `.env`, variable de entorno o Secrets de Streamlit Cloud). |
+| `GEMINI_MODEL` | Modelo a usar (por defecto `gemini-2.5-flash`). |
+| `RBM_DB_PATH` | Ruta del archivo SQLite (por defecto `rushbet_bankmaster.db` junto a la app). |
 
-La app no se rompe si la clave no existe; entonces usa un análisis local conservador.
+> En Streamlit Community Cloud el disco se borra al reiniciar la app. Descarga el CSV desde
+> **Historial → Respaldo** con frecuencia y vuelve a importarlo si hace falta.
 
-## Regla de planificación financiera
+## Plan financiero por defecto
 
-- Bankroll operativo inicial: $250.000 COP
-- Suscripción grupo tipster: $120.000 COP
-- Breakeven net target: $370.000 COP
-- 1U = 2.0% del bankroll = $5.000 COP
-- 2U = 4.0% = $10.000 COP
-- 3U = 6.0% = $15.000 COP
-- 4U = 10.0% = $25.000 COP
-- Stake especial: máximo absoluto $150.000 COP con alerta roja si supera el 10% del bankroll.
+| Unidad | Confianza mínima | % del bank | Stake (bank 250.000) |
+|---|---|---|---|
+| 1U Base | 70% | 2% | $5.000 |
+| 2U Moderado | 75% | 4% | $10.000 |
+| 3U Alto | 85% | 6% | $15.000 |
+| 4U Máximo | 90% | 10% | $25.000 |
+| Whale | 95% | 10% (tope $150.000) | $25.000 |
 
-## Funcionalidades principales
+Bank inicial $250.000 COP · suscripción $120.000 · meta breakeven neta $370.000.
 
-1. Dashboard ejecutivo con KPIs y seguimiento del bankroll.
-2. Registro de apuestas con almacenamiento persistente en SQLite.
-3. Cálculo de ROI, Yield, Win Rate y Kelly reference.
-4. Plan de staking según nivel de confianza.
-5. AI Analyst con Gemini 3 Flash (opcional).
-6. Configuración centralizada de parámetros del bank y del riesgo.
+## Definiciones
 
-## Buenas prácticas
+- **Yield** = beneficio neto / total apostado. **ROI del bank** = beneficio neto / bank inicial.
+- **Win rate** = ganadas / (ganadas + perdidas); las nulas no cuentan.
+- **Kelly** = (p·b − q) / b con b = cuota − 1; se recomienda ¼ Kelly.
+- **CLV** = cuota tomada / cuota de cierre − 1.
 
-- No excedas el 10% del bankroll en apuestas de máximo riesgo.
-- Dedica más tiempo a la calidad de selección que al volumen de apuestas.
-- Usa la IA únicamente como soporte de análisis, no para reemplazar juicio disciplinado.
-- Mantén una base de datos histórica limpia y revisa cada apuesta al cierre del mercado.
+## Migración desde v1
 
-## Despliegue sugerido
+Al iniciar, las apuestas guardadas con el par antiguo `status`/`result` se unifican en un solo estado y se
+recalcula su neto (v1 permitía, por ejemplo, estado «open» con resultado «won» y neto 0).
 
-Puedes desplegar la app en:
+## Aviso
 
-- Streamlit Community Cloud
-- Railway
-- Render
-- Docker + servicio web
-
-Ejemplo mínimo de despliegue con Docker:
-
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY . /app
-RUN pip install --no-cache-dir -r requirements.txt
-EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-```
-
-## Licencia
-
-Proyecto educativo / financiero interno de gestión de bankroll. No sustituye asesoría profesional de inversión o apuestas.
+Herramienta educativa de gestión de bankroll. No garantiza resultados ni sustituye asesoría profesional.
+Apuesta con responsabilidad.

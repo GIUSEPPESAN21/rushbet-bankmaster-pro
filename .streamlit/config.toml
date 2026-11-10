@@ -1,0 +1,54 @@
+# Tema de Rushbet BankMaster Pro para los controles nativos de Streamlit.
+# Los colores son los mismos tokens de assets/style.css: azul noche (#0B1F3A),
+# esmeralda de ganancias (#00A86B) y dorado de acento (#F5B700).
+# [theme.light] / [theme.dark] (Streamlit 1.46+) siguen la preferencia del sistema.
+
+[client]
+toolbarMode = "minimal"
+
+[server]
+runOnSave = false
+
+[theme]
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+baseFontSize = 16
+baseRadius = "0.75rem"
+buttonRadius = "0.75rem"
+showWidgetBorder = true
+chartCategoricalColors = ["#00A86B", "#1F4E8C", "#F5B700", "#E5484D", "#5B8DEF", "#7C5CFF", "#9AA8BD"]
+
+[theme.light]
+primaryColor = "#00875A"
+backgroundColor = "#F3F6FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0E1A2E"
+borderColor = "#CBD5E1"
+linkColor = "#00875A"
+greenColor = "#00875A"
+redColor = "#D93A3F"
+yellowColor = "#C99300"
+
+[theme.dark]
+primaryColor = "#22C58B"
+backgroundColor = "#070D18"
+secondaryBackgroundColor = "#0F1828"
+textColor = "#E6ECF5"
+borderColor = "#2A3954"
+linkColor = "#4FD6A4"
+greenColor = "#22C58B"
+redColor = "#FF6B6F"
+yellowColor = "#F5B700"
+
+[theme.light.sidebar]
+primaryColor = "#F5B700"
+backgroundColor = "#0B1F3A"
+secondaryBackgroundColor = "#13305A"
+textColor = "#EEF3FB"
+borderColor = "#24426E"
+
+[theme.dark.sidebar]
+primaryColor = "#F5B700"
+backgroundColor = "#050B16"
+secondaryBackgroundColor = "#0F2240"
+textColor = "#EEF3FB"
+borderColor = "#24426E"
