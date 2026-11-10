@@ -10,7 +10,6 @@ from core import database as db
 from core.analytics import (RECOMMENDATION_MODES, STAKE_RULES, advise_stake, available_bankroll,
                             plan_recommendation, staking_base)
 from core.models import DEFAULT_MARKETS, SPORT_MARKETS, SPORTS, STATUSES
-from ui import charts
 from ui import components as ui
 from ui.state import load
 
@@ -149,23 +148,25 @@ def render() -> None:
         adjustments.append({"tone": "info", "text": f"Ajuste manual: {ui.money(plan.final_stake, currency)} → {ui.money(stake, currency)}."})
     alerts = adjustments + advice.alerts
 
-    with plan_col:
-        ui.section_title("Ajuste automático", "shield", "Aplica tu plan y los límites del presupuesto.")
-        level = "danger" if any(item["tone"] == "danger" for item in alerts) else \
-                "warning" if any(item["tone"] == "warning" for item in alerts) else "success"
-        titles = {"success": "Apuesta dentro del plan", "warning": "Apuesta ajustada o por revisar", "danger": "Apuesta bloqueada"}
-        ui.risk_card(level, titles[level], [
-            ("Nivel asignado", plan.unit),
-            ("% del bank", f"{plan.percentage:.2f}%"),
-            ("Recomendado", ui.money(plan.recommended_stake, currency)),
-            ("Stake final", ui.money(stake, currency)),
-            ("Ganancia potencial", ui.money(stake * (odds - 1), currency)),
-            ("Valor esperado", ui.money(advice.expected_value, currency, signed=True)),
-        ], alerts)
-        st.plotly_chart(charts.kelly_gauge(advice.edge), width="stretch", config={"displayModeBar": False})
+    missing = not event.strip() or not selection.strip() or not market.strip()
+    blocked = missing or stake <= 0 or stake > available or stake > cfg.max_special_stake
+    status_text = None
+    if missing:
+        level, status_text = "warning", "Completa partido y selección"
+    elif blocked:
+        level = "danger"
+    elif any(item["tone"] in ("warning", "danger") for item in alerts):
+        level = "warning"
+    else:
+        level = "success"
 
-        missing = not event.strip() or not selection.strip() or not market.strip()
-        blocked = missing or stake <= 0 or stake > available or stake > cfg.max_special_stake
+    with plan_col:
+        ui.section_title("Tu ticket", "confirmation_number")
+        ui.bet_slip(
+            stake=stake, payout=stake * odds, profit=stake * (odds - 1), unit=plan.unit,
+            pct_bank=round(plan.percentage, 2), odds=odds, currency=currency, level=level,
+            alerts=alerts, event=event.strip(), selection=selection.strip(), status_text=status_text,
+        )
         if st.button("Guardar apuesta", type="primary", icon=":material/save:", width="stretch", disabled=blocked):
             reasons = "; ".join(item["text"] for item in adjustments)
             try:
@@ -183,10 +184,22 @@ def render() -> None:
                 ui.flash(f"Apuesta #{bet_id} guardada: {plan.unit}, stake {ui.money(stake, currency)}.")
                 st.rerun()
         if missing:
-            st.caption("Completa partido y selección para guardar.")
+            pass  # el propio ticket ya lo indica
         elif stake <= 0:
-            st.caption("La configuración recomienda no apostar.")
+            st.caption("Con esta recomendación el plan dice no apostar.")
         elif stake > available:
-            st.caption("El stake supera el bank disponible después de la reserva.")
+            st.caption("El monto supera el bank disponible después de la reserva.")
         elif stake > cfg.max_special_stake:
-            st.caption(f"El stake supera el tope de {ui.money(cfg.max_special_stake, currency)}.")
+            st.caption(f"El monto supera el tope de {ui.money(cfg.max_special_stake, currency)}.")
+
+        with st.expander("Ver cálculo", icon=":material/calculate:"):
+            if plan.recommended_stake and abs(plan.recommended_stake - stake) > 0.01:
+                st.write(f"Recomendado por el plan: **{ui.money(plan.recommended_stake, currency)}** → "
+                         f"apuesta final **{ui.money(stake, currency)}**.")
+            for note in (item for item in alerts if item["tone"] == "info"):
+                st.caption(note["text"])
+            c1, c2 = st.columns(2)
+            c1.metric("Prob. de la cuota", f"{advice.implied_prob:.1f}%")
+            c2.metric("Tu confianza", f"{advice.estimated_prob:.0f}%")
+            c1.metric("Ventaja", f"{advice.edge:+.1f} pp")
+            c2.metric("Valor esperado", ui.money(advice.expected_value, currency, signed=True))

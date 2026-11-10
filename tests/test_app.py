@@ -84,3 +84,17 @@ def test_ai_local_report(temp_db, monkeypatch):
     next(b for b in at.button if b.label == "Generar análisis").click().run()
     assert not at.exception
     assert any("Diagnóstico local" in m.value for m in at.markdown)
+
+
+
+def test_new_bet_shows_simple_ticket(temp_db):
+    at = _view("new_bet")
+    html = " ".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
+    assert "bm-slip" in html and "Completa partido y selección" in html
+    assert 'class="bm-risk' not in html  # el semáforo anterior ya no se muestra
+    assert not at.get("plotly_chart")  # sin medidor
+    at.text_input(key="qb_event").input("Real vs Barça")
+    at.text_input(key="qb_selection").input("Local")
+    at.run()
+    html = " ".join(m.value for m in at.markdown)
+    assert "Lista para guardar" in html and "Si ganas cobras" in html

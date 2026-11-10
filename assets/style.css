@@ -227,6 +227,32 @@
 .bm-risk__alerts li.is-warning { color: var(--bm-warning-fg); background: var(--bm-warning-bg); }
 .bm-risk__alerts li.is-success { color: var(--bm-success-fg); background: var(--bm-success-bg); }
 
+/* ---------------------------------------------------------------- ticket de apuesta */
+.bm-slip {
+    --slip-fg: var(--bm-success-fg); --slip-bg: var(--bm-success-bg);
+    position: relative; overflow: hidden;
+    background: var(--bm-surface); border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-xl); box-shadow: var(--bm-shadow);
+    margin-bottom: 0.9rem;
+}
+.bm-slip--warning { --slip-fg: var(--bm-warning-fg); --slip-bg: var(--bm-warning-bg); }
+.bm-slip--danger  { --slip-fg: var(--bm-danger-fg);  --slip-bg: var(--bm-danger-bg); }
+.bm-slip__head { padding: 1rem 1.25rem 0.9rem; color: #FFFFFF; background: var(--bm-gradient-brand); }
+.bm-slip__event { font-weight: 800; font-size: 1.05rem; line-height: 1.25; overflow-wrap: anywhere; }
+.bm-slip__pick { margin-top: 0.2rem; font-size: 0.9rem; color: rgba(255, 255, 255, 0.85); overflow-wrap: anywhere; }
+.bm-slip__pick span { font-weight: 800; color: var(--bm-gold); }
+.bm-slip__stake { padding: 1.2rem 1.25rem 0.9rem; text-align: center; border-bottom: 1px dashed var(--bm-border-strong); }
+.bm-slip__label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--bm-muted); }
+.bm-slip__amount { margin: 0.15rem 0 0.45rem; font-size: clamp(1.9rem, 1.4rem + 1.6vw, 2.6rem); font-weight: 800; letter-spacing: -0.03em; color: var(--bm-text); font-variant-numeric: tabular-nums; }
+.bm-slip__unit { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; color: var(--bm-primary); background: var(--bm-primary-soft); }
+.bm-slip__row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 0.9rem 1.25rem; text-align: center; }
+.bm-slip__value { margin-top: 0.1rem; font-size: 1.2rem; font-weight: 800; color: var(--bm-text); font-variant-numeric: tabular-nums; }
+.bm-slip__status { display: flex; align-items: center; justify-content: center; gap: 0.45rem; margin: 0 1rem 1rem; padding: 0.6rem 0.8rem; border-radius: 12px; font-weight: 700; color: var(--slip-fg); background: var(--slip-bg); }
+.bm-slip__issues { list-style: none; margin: -0.4rem 1rem 1rem; padding: 0; }
+.bm-slip__issues li { display: flex; gap: 0.45rem; align-items: flex-start; margin-top: 0.35rem; padding: 0.45rem 0.65rem; border-radius: 10px; font-size: 0.84rem; }
+.bm-slip__issues li.is-danger { color: var(--bm-danger-fg); background: var(--bm-danger-bg); }
+.bm-slip__issues li.is-warning { color: var(--bm-warning-fg); background: var(--bm-warning-bg); }
+
 /* ---------------------------------------------------------------- línea de tiempo (SaludIA / UNIMINUTO) */
 .bm-timeline { list-style: none; margin: 0.2rem 0 0; padding: 0; }
 .bm-timeline__item { position: relative; display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto; gap: 0.75rem; padding: 0 0 0.9rem; }
