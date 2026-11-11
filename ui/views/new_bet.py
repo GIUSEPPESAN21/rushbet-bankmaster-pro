@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import streamlit as st
@@ -92,9 +93,6 @@ def _recommendation_input(base: float, cfg) -> tuple[str, float]:
 def render() -> None:
     bets, cfg = load()
     currency = cfg.currency
-    total_bank = cfg.base_bankroll + sum(float(bet.get("net_profit") or 0) for bet in bets)
-    available = available_bankroll(bets, cfg)
-    base = staking_base(bets, cfg)
 
     ui.show_flash()
     ui.page_header(
@@ -103,6 +101,28 @@ def render() -> None:
         "add_circle",
         badges=[{"text": "Registro rápido", "tone": "success", "icon": "bolt"}],
     )
+
+    with st.container(border=True):
+        cap_col, btn_col = st.columns([3, 1], vertical_alignment="bottom")
+        new_capital = cap_col.number_input(
+            f"Tu capital ({currency})",
+            min_value=10_000.0,
+            value=float(cfg.base_bankroll),
+            step=10_000.0,
+            format="%.2f",
+            key="qb_capital",
+            help="Ajusta aquí tu capital cuando cambie; no necesitas ir a Configuración.",
+        )
+        if btn_col.button("Actualizar", icon=":material/sync:", width="stretch",
+                          disabled=new_capital == cfg.base_bankroll):
+            db.save_settings(replace(cfg, base_bankroll=new_capital))
+            ui.flash(f"Capital actualizado a {ui.money(new_capital, currency)}.")
+            st.rerun()
+
+    total_bank = cfg.base_bankroll + sum(float(bet.get("net_profit") or 0) for bet in bets)
+    available = available_bankroll(bets, cfg)
+    base = staking_base(bets, cfg)
+
     ui.stat_cards([
         {"label": "Bank total", "value": ui.money(total_bank, currency), "icon": "account_balance", "tone": "info"},
         {"label": "Reserva protegida", "value": ui.money(cfg.protected_reserve, currency), "icon": "lock", "tone": "neutral"},
