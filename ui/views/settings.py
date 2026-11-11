@@ -36,7 +36,8 @@ def render() -> None:
     ui.stat_cards([
         {"label": "Bank actual", "value": ui.money(metrics["current_bankroll"], cfg.currency), "icon": "account_balance", "tone": "info"},
         {"label": "Reserva protegida", "value": ui.money(cfg.protected_reserve, cfg.currency), "icon": "lock", "tone": "neutral"},
-        {"label": "Disponible", "value": ui.money(metrics["available_bankroll"], cfg.currency), "icon": "payments", "tone": "success"},
+        {"label": "Disponible para apostar", "value": ui.money(metrics["available_to_stake"], cfg.currency), "icon": "payments", "tone": "success",
+         "help": "Ya descuenta apuestas pendientes; el capital no se toca hasta liquidarlas."},
         {"label": "Objetivo de bank", "value": ui.money(metrics["goal_bankroll"], cfg.currency), "icon": "flag", "tone": "info",
          "help": f"Faltan {ui.money(metrics['goal_gap'], cfg.currency)}"},
     ])

@@ -103,6 +103,22 @@ def available_bankroll(bets: Iterable[dict], settings: BankSettings) -> float:
     return round(max(capital_now(bets, settings) - settings.protected_reserve, 0.0), 2)
 
 
+def pending_exposure(bets: Iterable[dict]) -> float:
+    """Suma de los stakes de apuestas aún no liquidadas (ya comprometidos)."""
+    df = bets_frame(bets)
+    return round(float(df[df["status"] == "pending"]["stake"].sum()), 2)
+
+
+def available_to_stake(bets: Iterable[dict], settings: BankSettings) -> float:
+    """Lo que de verdad queda para nueva apuesta: descuenta lo ya jugado en pendientes.
+
+    El capital (``capital_now``) no se toca al registrar una apuesta pendiente; solo
+    cambia cuando se liquida (gana o pierde). Esta función es la vista en tiempo real
+    de cuánto margen queda para seguir apostando sin tocar ese capital.
+    """
+    return round(max(available_bankroll(bets, settings) - pending_exposure(bets), 0.0), 2)
+
+
 def staking_base(bets: Iterable[dict], settings: BankSettings) -> float:
     """Bank disponible sobre el que se calculan las unidades según el modo de staking."""
     if settings.staking_mode == "dinamico":
@@ -319,6 +335,7 @@ def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None
         "max_drawdown_pct": round(drawdown["pct"] * 100, 2),
         "open_exposure": round(open_exposure, 2),
         "open_exposure_pct": round(safe_divide(open_exposure, max(bank_available, 1)) * 100, 2),
+        "available_to_stake": round(max(bank_available - open_exposure, 0.0), 2),
         "kelly_reference": round(kelly_ref, 4),
         "clv_avg": round(clv_avg, 2) if clv_avg is not None else None,
         "streaks": _streaks(list(settled["status"])),
@@ -423,7 +440,7 @@ def advise_stake(odds: float, confidence: float, stake: float, bets: Iterable[di
     k_full = kelly_fraction(odds, p)
     unit = unit_for_confidence(confidence)
     profile = {row["unit"]: row["cash"] for row in get_stake_profile(base, settings)}
-    pending_exposure = float(bets_frame(bets).query("status == 'pending'")["stake"].sum())
+    open_exposure = pending_exposure(bets)
 
     alerts: List[Dict[str, str]] = []
     if stake > settings.max_special_stake:
@@ -433,7 +450,10 @@ def advise_stake(odds: float, confidence: float, stake: float, bets: Iterable[di
                        "text": f"Arriesga más del {settings.max_risk_ratio:.0%} del bank actual ({bank_now * settings.max_risk_ratio:,.0f})."})
     if stake > bank_now:
         alerts.append({"tone": "danger", "text": "El stake es mayor que el bank disponible."})
-    if (pending_exposure + stake) > bank_now * settings.max_open_exposure:
+    if (open_exposure + stake) > bank_now:
+        alerts.append({"tone": "danger",
+                       "text": f"Con tus apuestas pendientes ({open_exposure:,.0f}) ya no queda capital para este stake."})
+    elif (open_exposure + stake) > bank_now * settings.max_open_exposure:
         alerts.append({"tone": "warning",
                        "text": f"La exposición abierta superaría el {settings.max_open_exposure:.0%} del bank."})
     if k_full == 0:

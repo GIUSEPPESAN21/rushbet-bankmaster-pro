@@ -8,7 +8,7 @@ from datetime import date
 import streamlit as st
 
 from core import database as db
-from core.analytics import (RECOMMENDATION_MODES, STAKE_RULES, advise_stake, available_bankroll,
+from core.analytics import (RECOMMENDATION_MODES, STAKE_RULES, advise_stake, available_to_stake,
                             plan_recommendation, staking_base)
 from core.models import DEFAULT_MARKETS, SPORT_MARKETS, SPORTS, STATUSES
 from ui import components as ui
@@ -120,15 +120,16 @@ def render() -> None:
             st.rerun()
 
     total_bank = cfg.base_bankroll + sum(float(bet.get("net_profit") or 0) for bet in bets)
-    available = available_bankroll(bets, cfg)
+    available = available_to_stake(bets, cfg)
     base = staking_base(bets, cfg)
 
     ui.stat_cards([
         {"label": "Bank total", "value": ui.money(total_bank, currency), "icon": "account_balance", "tone": "info"},
         {"label": "Reserva protegida", "value": ui.money(cfg.protected_reserve, currency), "icon": "lock", "tone": "neutral"},
-        {"label": "Disponible para apostar", "value": ui.money(available, currency), "icon": "payments", "tone": "success"},
+        {"label": "Disponible para apostar", "value": ui.money(available, currency), "icon": "payments", "tone": "success",
+         "help": "Ya descuenta tus apuestas pendientes; tu capital no se toca hasta liquidarlas."},
         {"label": "Base del cálculo", "value": ui.money(base, currency), "icon": "percent", "tone": "info",
-         "help": f"Modo {cfg.staking_mode}"},
+         "help": f"Modo {cfg.staking_mode} · capital intocable, no baja por apuestas pendientes"},
     ])
 
     entry_col, plan_col = st.columns([1.25, 1], gap="large")
@@ -208,7 +209,7 @@ def render() -> None:
         elif stake <= 0:
             st.caption("Con esta recomendación el plan dice no apostar.")
         elif stake > available:
-            st.caption("El monto supera el bank disponible después de la reserva.")
+            st.caption("El monto supera lo disponible: ya tienes apuestas pendientes comprometiendo ese capital.")
         elif stake > cfg.max_special_stake:
             st.caption(f"El monto supera el tope de {ui.money(cfg.max_special_stake, currency)}.")
 

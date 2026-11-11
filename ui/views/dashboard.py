@@ -49,6 +49,8 @@ def render() -> None:
     ui.stat_cards([
         {"label": "Capital de apuesta", "value": ui.money(m["capital_now"], c), "icon": "account_balance",
          "tone": "info", "help": "Solo baja con pérdidas; las ganancias no lo aumentan"},
+        {"label": "Disponible para apostar", "value": ui.money(m["available_to_stake"], c), "icon": "payments",
+         "tone": "success", "help": f"Resta {ui.money(m['open_exposure'], c)} en apuestas pendientes"},
         {"label": "Ganancias disponibles", "value": ui.money(m["available_earnings"], c), "icon": "savings",
          "tone": "success", "help": f"Generadas {ui.money(m['gross_earnings'], c)} · Retiradas {ui.money(m['total_withdrawn'], c)}"},
         {"label": "Meta de gastos del mes", "value": ui.money(m["monthly_expense_goal"], c) if m["monthly_expense_goal"] else "Sin definir",

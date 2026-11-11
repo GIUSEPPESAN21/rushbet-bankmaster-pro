@@ -3,10 +3,10 @@ import sqlite3
 import pytest
 
 from conftest import make_bet
-from core.analytics import (advise_stake, available_bankroll, available_earnings, breakdown,
+from core.analytics import (advise_stake, available_bankroll, available_earnings, available_to_stake, breakdown,
                             build_cumulative_bankroll, capital_now, get_stake_profile, gross_earnings,
-                            kelly_fraction, max_drawdown, monthly_summary, plan_recommendation, stake_for_unit,
-                            summarize_bets, total_withdrawals, unit_for_confidence, unit_for_percentage)
+                            kelly_fraction, max_drawdown, monthly_summary, pending_exposure, plan_recommendation,
+                            stake_for_unit, summarize_bets, total_withdrawals, unit_for_confidence, unit_for_percentage)
 from core.models import BankSettings, compute_net_profit, normalize_status
 from ui.components import money
 
@@ -267,6 +267,14 @@ def test_earnings_never_reinvest_into_capital():
     assert available_bankroll(bets, cfg) == 230_000
 
 
+def test_pending_bets_reduce_available_but_not_capital():
+    cfg = BankSettings()
+    bets = _bets()  # incluye una pendiente de 5.000
+    assert pending_exposure(bets) == 5_000
+    assert capital_now(bets, cfg) == 230_000  # el capital no se mueve por tener una apuesta pendiente
+    assert available_to_stake(bets, cfg) == 225_000  # pero el margen real para seguir apostando sí baja
+
+
 def test_withdrawals_reduce_available_earnings():
     withdrawals = [{"amount": 4_000}, {"amount": 1_000}]
     assert total_withdrawals(withdrawals) == 5_000
@@ -276,6 +284,7 @@ def test_withdrawals_reduce_available_earnings():
 def test_summary_exposes_capital_and_earnings_split():
     m = summarize_bets(_bets(), BankSettings(monthly_expense_goal=6_000), withdrawals=[{"amount": 4_000}])
     assert m["capital_now"] == 230_000
+    assert m["available_to_stake"] == 225_000  # 230.000 - 5.000 de la apuesta pendiente
     assert m["gross_earnings"] == 10_000
     assert m["total_withdrawn"] == 4_000
     assert m["available_earnings"] == 6_000
