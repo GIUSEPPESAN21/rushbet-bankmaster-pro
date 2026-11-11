@@ -63,13 +63,44 @@ def bets_frame(bets: Iterable[dict]) -> pd.DataFrame:
 
 
 def current_bankroll(bets: Iterable[dict], settings: BankSettings) -> float:
+    """Patrimonio total: capital de apuesta + ganancias generadas (retiradas o no).
+
+    Útil para metas de recuperación/ganancia, que miden riqueza total. No es la base
+    de staking: para eso usa ``capital_now``, que las ganancias nunca aumentan.
+    """
     df = bets_frame(bets)
     return round(settings.base_bankroll + float(df["net_profit"].fillna(0).sum()), 2)
 
 
+def capital_now(bets: Iterable[dict], settings: BankSettings) -> float:
+    """Capital de riesgo: baja con las pérdidas, las ganancias nunca lo aumentan.
+
+    Las ganancias se separan a una bolsa aparte (ver ``gross_earnings``) para que el
+    stake no crezca apostando con dinero que ya debería considerarse ganancia.
+    """
+    df = bets_frame(bets)
+    losses = float(df["net_profit"].fillna(0).clip(upper=0).sum())
+    return round(max(settings.base_bankroll + losses, 0.0), 2)
+
+
+def gross_earnings(bets: Iterable[dict]) -> float:
+    """Ganancias acumuladas (solo apuestas ganadas/medio ganadas), antes de retiros."""
+    df = bets_frame(bets)
+    return round(float(df["net_profit"].fillna(0).clip(lower=0).sum()), 2)
+
+
+def total_withdrawals(withdrawals: Iterable[dict]) -> float:
+    return round(sum(float(w.get("amount") or 0) for w in withdrawals), 2)
+
+
+def available_earnings(bets: Iterable[dict], withdrawals: Iterable[dict]) -> float:
+    """Ganancias que aún no se han retirado para cubrir gastos."""
+    return round(gross_earnings(bets) - total_withdrawals(withdrawals), 2)
+
+
 def available_bankroll(bets: Iterable[dict], settings: BankSettings) -> float:
-    """Capital utilizable después de separar la reserva protegida."""
-    return round(max(current_bankroll(bets, settings) - settings.protected_reserve, 0.0), 2)
+    """Capital de apuesta utilizable después de separar la reserva protegida."""
+    return round(max(capital_now(bets, settings) - settings.protected_reserve, 0.0), 2)
 
 
 def staking_base(bets: Iterable[dict], settings: BankSettings) -> float:
@@ -222,8 +253,10 @@ def _streaks(results: List[str]) -> Dict[str, object]:
     return {"current": f"{run}{current_kind}" if current_kind else "—", "best_win": best_win, "best_loss": best_loss}
 
 
-def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None) -> dict:
+def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None,
+                   withdrawals: Optional[Iterable[dict]] = None) -> dict:
     settings = settings or BankSettings()
+    withdrawals = list(withdrawals or [])
     df = bets_frame(bets)
     settled = df[df["status"].isin(SETTLED_STATUSES)].sort_values(["bet_date", "id"])
     pending = df[df["status"] == "pending"]
@@ -234,7 +267,7 @@ def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None
     losses = int(settled["status"].isin(LOSS_STATUSES).sum())
     voids = int((settled["status"] == "void").sum())
     bank_now = settings.base_bankroll + net_profit
-    bank_available = max(bank_now - settings.protected_reserve, 0.0)
+    bank_available = available_bankroll(bets, settings)
     curve = build_cumulative_bankroll(bets, settings)
     drawdown = max_drawdown([p["bankroll"] for p in curve])
     target_profit = settings.breakeven_target - settings.base_bankroll
@@ -247,6 +280,12 @@ def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None
         if not settled.empty else 0.0
     )
     open_exposure = float(pending["stake"].sum())
+    capital_risk = capital_now(bets, settings)
+    earnings_gross = gross_earnings(bets)
+    withdrawn = total_withdrawals(withdrawals)
+    earnings_available = round(earnings_gross - withdrawn, 2)
+    expense_goal = settings.monthly_expense_goal
+    expense_covered = min(max(earnings_available, 0.0), expense_goal) if expense_goal > 0 else earnings_available
 
     return {
         "total_bets": int(len(df)),
@@ -283,6 +322,14 @@ def summarize_bets(bets: Iterable[dict], settings: Optional[BankSettings] = None
         "kelly_reference": round(kelly_ref, 4),
         "clv_avg": round(clv_avg, 2) if clv_avg is not None else None,
         "streaks": _streaks(list(settled["status"])),
+        "capital_now": round(capital_risk, 2),
+        "gross_earnings": round(earnings_gross, 2),
+        "total_withdrawn": round(withdrawn, 2),
+        "available_earnings": earnings_available,
+        "monthly_expense_goal": round(expense_goal, 2),
+        "expense_goal_covered": round(expense_covered, 2),
+        "expense_goal_gap": round(max(expense_goal - earnings_available, 0.0), 2),
+        "expense_goal_progress": round(safe_divide(expense_covered, expense_goal) * 100, 1) if expense_goal > 0 else 100.0,
     }
 
 

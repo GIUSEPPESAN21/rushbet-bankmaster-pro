@@ -3,9 +3,10 @@ import sqlite3
 import pytest
 
 from conftest import make_bet
-from core.analytics import (advise_stake, available_bankroll, breakdown, build_cumulative_bankroll, get_stake_profile,
+from core.analytics import (advise_stake, available_bankroll, available_earnings, breakdown,
+                            build_cumulative_bankroll, capital_now, get_stake_profile, gross_earnings,
                             kelly_fraction, max_drawdown, monthly_summary, plan_recommendation, stake_for_unit,
-                            summarize_bets, unit_for_confidence, unit_for_percentage)
+                            summarize_bets, total_withdrawals, unit_for_confidence, unit_for_percentage)
 from core.models import BankSettings, compute_net_profit, normalize_status
 from ui.components import money
 
@@ -109,6 +110,21 @@ def test_legacy_rows_are_migrated(temp_db):
     temp_db.init_db()
     row = temp_db.get_bets()[0]
     assert row["status"] == "won" and row["net_profit"] == 2000
+
+
+def test_withdrawal_crud(temp_db):
+    w_id = temp_db.add_withdrawal("2026-11-01", 5_000, "Arriendo")
+    assert temp_db.get_withdrawals()[0]["amount"] == 5_000
+    temp_db.delete_withdrawal(w_id)
+    assert temp_db.get_withdrawals() == []
+
+
+@pytest.mark.parametrize("bad", [dict(amount=0), dict(w_date="ayer")])
+def test_withdrawal_validation(temp_db, bad):
+    data = dict(w_date="2026-11-01", amount=5_000)
+    data.update(bad)
+    with pytest.raises(ValueError):
+        temp_db.add_withdrawal(**data)
 
 
 def test_csv_roundtrip(temp_db):
@@ -219,8 +235,9 @@ def test_advisor_flags_manual_percentage_or_unit_mismatch():
 
 def test_dynamic_staking_uses_current_bank():
     cfg = BankSettings(staking_mode="dinamico")
-    adv = advise_stake(2.0, 80, 48_000, _bets(), cfg)  # bank actual 240k -> 3U = 48.000
-    assert adv.unit_stake == 48_000
+    # Capital de riesgo = 250k - 20k (pérdida); la ganancia (+10k) no lo aumenta, se va a ganancias.
+    adv = advise_stake(2.0, 80, 46_000, _bets(), cfg)  # capital 230k -> 3U = 46.000
+    assert adv.unit_stake == 46_000
 
 
 def test_protected_reserve_is_excluded_from_stakes():
@@ -240,6 +257,31 @@ def test_recommendation_accepts_confidence_percentage_or_amount():
     assert amount.adjustments  # 8% no coincide exactamente con un nivel acordado
     assert unit_for_percentage(30) == "Whale"
     assert unit_for_percentage(12) == "—"
+
+
+def test_earnings_never_reinvest_into_capital():
+    cfg = BankSettings()
+    bets = _bets()  # +10.000 ganada, -20.000 perdida, nula, pendiente
+    assert capital_now(bets, cfg) == 230_000  # solo la pérdida afecta el capital de apuesta
+    assert gross_earnings(bets) == 10_000  # la ganancia se separa, no vuelve al capital
+    assert available_bankroll(bets, cfg) == 230_000
+
+
+def test_withdrawals_reduce_available_earnings():
+    withdrawals = [{"amount": 4_000}, {"amount": 1_000}]
+    assert total_withdrawals(withdrawals) == 5_000
+    assert available_earnings(_bets(), withdrawals) == 5_000  # 10.000 ganados - 5.000 retirados
+
+
+def test_summary_exposes_capital_and_earnings_split():
+    m = summarize_bets(_bets(), BankSettings(monthly_expense_goal=6_000), withdrawals=[{"amount": 4_000}])
+    assert m["capital_now"] == 230_000
+    assert m["gross_earnings"] == 10_000
+    assert m["total_withdrawn"] == 4_000
+    assert m["available_earnings"] == 6_000
+    assert m["expense_goal_covered"] == 6_000
+    assert m["expense_goal_gap"] == 0
+    assert m["expense_goal_progress"] == 100.0
 
 
 def test_recommendation_is_capped_by_budget_rules():

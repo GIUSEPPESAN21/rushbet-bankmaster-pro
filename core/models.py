@@ -92,6 +92,7 @@ class BankSettings:
     stop_loss_ratio: float = 0.20
     staking_mode: str = "fijo"
     currency: str = "COP"
+    monthly_expense_goal: float = 0.0
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "BankSettings":

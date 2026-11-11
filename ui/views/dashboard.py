@@ -8,12 +8,13 @@ from core.analytics import build_cumulative_bankroll, get_stake_profile, staking
 from core.models import STATUS_TONES, STATUSES
 from ui import charts
 from ui import components as ui
-from ui.state import load
+from ui.state import load, load_withdrawals
 
 
 def render() -> None:
     bets, cfg = load()
-    m = summarize_bets(bets, cfg)
+    withdrawals = load_withdrawals()
+    m = summarize_bets(bets, cfg, withdrawals)
     c = cfg.currency
 
     ui.page_header("Dashboard ejecutivo", "Estado del capital, rendimiento y disciplina del plan.", "space_dashboard",
@@ -41,6 +42,18 @@ def render() -> None:
          "help": f"Stake medio {ui.money(m['avg_stake'], c)}"},
         {"label": "CLV medio", "value": ui.pct(m["clv_avg"], signed=True) if m["clv_avg"] is not None else "—",
          "icon": "compare_arrows", "tone": ui.tone_for(m["clv_avg"] or 0), "help": "Cuota tomada vs. cierre"},
+    ])
+
+    ui.section_title("Capital vs. ganancias", "savings",
+                     "Las ganancias no se reinvierten: se separan para cubrir tus gastos.")
+    ui.stat_cards([
+        {"label": "Capital de apuesta", "value": ui.money(m["capital_now"], c), "icon": "account_balance",
+         "tone": "info", "help": "Solo baja con pérdidas; las ganancias no lo aumentan"},
+        {"label": "Ganancias disponibles", "value": ui.money(m["available_earnings"], c), "icon": "savings",
+         "tone": "success", "help": f"Generadas {ui.money(m['gross_earnings'], c)} · Retiradas {ui.money(m['total_withdrawn'], c)}"},
+        {"label": "Meta de gastos del mes", "value": ui.money(m["monthly_expense_goal"], c) if m["monthly_expense_goal"] else "Sin definir",
+         "icon": "receipt_long", "tone": "neutral",
+         "help": f"Cubierto {m['expense_goal_progress']:.0f}%" if m["monthly_expense_goal"] else "Config. en Configuración"},
     ])
 
     if not bets:

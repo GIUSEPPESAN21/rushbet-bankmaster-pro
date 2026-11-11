@@ -10,3 +10,7 @@ from core.models import BankSettings
 
 def load() -> Tuple[List[dict], BankSettings]:
     return db.get_bets(), db.load_settings()
+
+
+def load_withdrawals() -> List[dict]:
+    return db.get_withdrawals()

@@ -129,6 +129,15 @@ def init_db() -> None:
         """))
         conn.execute(text("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"))
         conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS withdrawals (
+                id {serial},
+                w_date TEXT NOT NULL,
+                amount DOUBLE PRECISION NOT NULL,
+                note TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS audit_events (
                 id {serial},
                 action TEXT NOT NULL,
@@ -357,6 +366,40 @@ def save_settings(settings: BankSettings) -> None:
         _audit(conn, "update", "settings", payload=values)
 
 
+def add_withdrawal(w_date: str, amount: float, note: str = "") -> int:
+    w_date = str(w_date or "").strip()[:10]
+    try:
+        date.fromisoformat(w_date)
+    except ValueError as exc:
+        raise ValueError("La fecha debe tener formato AAAA-MM-DD y ser válida.") from exc
+    amount = float(amount)
+    if amount <= 0:
+        raise ValueError("El monto del retiro debe ser mayor que cero.")
+    note = str(note or "").strip()
+    with get_engine().begin() as conn:
+        w_id = conn.execute(text("""
+            INSERT INTO withdrawals (w_date, amount, note) VALUES (:w_date, :amount, :note)
+            RETURNING id
+        """), {"w_date": w_date, "amount": amount, "note": note}).scalar_one()
+        _audit(conn, "create", "withdrawal", int(w_id), {"w_date": w_date, "amount": amount, "note": note})
+        return int(w_id)
+
+
+def get_withdrawals() -> List[Dict[str, Any]]:
+    with get_engine().connect() as conn:
+        rows = conn.execute(text("SELECT * FROM withdrawals ORDER BY w_date DESC, id DESC")).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def delete_withdrawal(withdrawal_id: int) -> None:
+    with get_engine().begin() as conn:
+        row = conn.execute(text("SELECT * FROM withdrawals WHERE id = :id"), {"id": int(withdrawal_id)}).mappings().first()
+        if row is None:
+            return
+        _audit(conn, "delete", "withdrawal", int(withdrawal_id), dict(row))
+        conn.execute(text("DELETE FROM withdrawals WHERE id = :id"), {"id": int(withdrawal_id)})
+
+
 def export_csv(bets: List[Dict[str, Any]]) -> bytes:
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=EXPORT_COLUMNS, extrasaction="ignore")
@@ -396,5 +439,6 @@ def reset_db() -> None:
     with engine.begin() as conn:
         _audit(conn, "reset", "database", payload={"backend": "postgresql"})
         conn.execute(text("DELETE FROM bets"))
+        conn.execute(text("DELETE FROM withdrawals"))
         conn.execute(text("DELETE FROM settings"))
     init_db()

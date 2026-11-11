@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
 
 import streamlit as st
 
@@ -10,7 +11,7 @@ from core import database as db
 from core.analytics import get_stake_profile, staking_base, summarize_bets
 from core.models import STAKING_MODES, BankSettings
 from ui import components as ui
-from ui.state import load
+from ui.state import load, load_withdrawals
 
 PROFILES = {
     "Conservador": {"max_risk_ratio": 0.10, "max_open_exposure": 0.20, "stop_loss_ratio": 0.10},
@@ -27,7 +28,8 @@ def _apply_profile(name: str, cfg: BankSettings) -> None:
 
 def render() -> None:
     bets, cfg = load()
-    metrics = summarize_bets(bets, cfg)
+    withdrawals = load_withdrawals()
+    metrics = summarize_bets(bets, cfg, withdrawals)
     ui.show_flash()
     ui.page_header("Presupuesto y objetivos", "Ajusta el capital disponible y deja que la app aplique sus límites.", "tune")
 
@@ -66,13 +68,16 @@ def render() -> None:
         st.info(f"Capital inicial utilizable: **{ui.money(base - reserve, cfg.currency)}**", icon=":material/savings:")
 
         ui.section_title("Objetivos", "flag", "Define recuperación y ganancia sin modificar el historial.")
-        a, b = st.columns(2)
+        a, b, d = st.columns(3)
         breakeven = a.number_input("Objetivo de recuperación (bank)", min_value=10_000.0,
                                    value=cfg.breakeven_target, step=10_000.0, format="%.2f",
                                    help="Bank necesario para recuperar la inversión; suele ser bank inicial + suscripción.")
         profit_target = b.number_input("Ganancia objetivo", min_value=0.0, value=cfg.profit_target,
                                        step=10_000.0, format="%.2f",
                                        help="La meta de bank será bankroll inicial + esta ganancia.")
+        expense_goal = d.number_input("Gasto fijo mensual a cubrir", min_value=0.0, value=cfg.monthly_expense_goal,
+                                      step=10_000.0, format="%.2f",
+                                      help="Lo que quieres cubrir con ganancias cada mes (arriendo, servicios…).")
 
         ui.section_title("Protección del capital", "shield")
         a, b, d = st.columns(3)
@@ -108,6 +113,7 @@ def render() -> None:
                 stop_loss_ratio=stop_loss / 100,
                 staking_mode=mode,
                 currency=(currency or "COP").strip().upper(),
+                monthly_expense_goal=expense_goal,
             ))
             ui.flash("Presupuesto, objetivos y límites guardados.")
             st.rerun()
@@ -121,6 +127,8 @@ def render() -> None:
     ui.section_title("Stakes resultantes", "stairs", f"Calculados sobre {ui.money(base_now, cfg.currency)}")
     ui.stake_ladder(get_stake_profile(base_now, cfg), cfg.currency)
 
+    _earnings_and_withdrawals(cfg, metrics, withdrawals)
+
     with st.expander("Zona de peligro", icon=":material/warning:"):
         st.write("Borra las apuestas y restablece la configuración. Descarga antes un respaldo en Historial.")
         sure = st.text_input("Escribe BORRAR para confirmar", key="reset_confirm")
@@ -128,3 +136,45 @@ def render() -> None:
             db.reset_db()
             ui.flash("Base de datos reiniciada.", "warning")
             st.rerun()
+
+
+def _earnings_and_withdrawals(cfg: BankSettings, metrics: dict, withdrawals: list) -> None:
+    currency = cfg.currency
+    ui.section_title("Ganancias y retiros", "savings",
+                     "Las ganancias de tus apuestas no se reinvierten: sepáralas aquí para cubrir gastos.")
+    ui.stat_cards([
+        {"label": "Ganancias disponibles", "value": ui.money(metrics["available_earnings"], currency),
+         "icon": "savings", "tone": "success"},
+        {"label": "Generadas en total", "value": ui.money(metrics["gross_earnings"], currency), "icon": "trending_up", "tone": "info"},
+        {"label": "Retiradas en total", "value": ui.money(metrics["total_withdrawn"], currency), "icon": "payments", "tone": "neutral"},
+        {"label": "Meta mensual cubierta", "value": f"{metrics['expense_goal_progress']:.0f}%" if cfg.monthly_expense_goal else "Sin meta",
+         "icon": "flag", "tone": "info", "help": ui.money(metrics["expense_goal_gap"], currency) + " por cubrir" if cfg.monthly_expense_goal else None},
+    ])
+
+    with st.form("withdrawal_form", clear_on_submit=True):
+        a, b, d = st.columns([1, 1, 2])
+        w_date = a.date_input("Fecha", value=date.today(), format="YYYY-MM-DD", key="wd_date")
+        amount = b.number_input(f"Monto a retirar ({currency})", min_value=1.0,
+                                value=min(1000.0, max(metrics["available_earnings"], 1.0)),
+                                step=1000.0, format="%.2f", key="wd_amount")
+        note = d.text_input("Motivo (opcional)", placeholder="Arriendo, servicios, imprevisto…", key="wd_note")
+        submit = st.form_submit_button("Registrar retiro", type="primary", icon=":material/payments:")
+        if submit:
+            if amount > metrics["available_earnings"]:
+                st.error(f"Solo tienes {ui.money(metrics['available_earnings'], currency)} disponibles en ganancias.",
+                         icon=":material/error:")
+            else:
+                db.add_withdrawal(w_date.isoformat(), amount, note)
+                ui.flash(f"Retiro de {ui.money(amount, currency)} registrado.")
+                st.rerun()
+
+    if withdrawals:
+        with st.expander(f"Historial de retiros ({len(withdrawals)})", icon=":material/history:"):
+            for w in withdrawals[:20]:
+                c1, c2, c3 = st.columns([2, 5, 1])
+                c1.write(ui.money(w["amount"], currency))
+                c2.write(f"{w['w_date']} · {w['note'] or 'Sin motivo'}")
+                if c3.button("", icon=":material/delete:", key=f"del_wd_{w['id']}"):
+                    db.delete_withdrawal(w["id"])
+                    ui.flash("Retiro eliminado.", "warning")
+                    st.rerun()
